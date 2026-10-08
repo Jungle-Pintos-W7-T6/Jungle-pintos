@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="500" viewBox="0 0 1440 500" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Pintos — Jungle Team 06</title>
+  <desc id="desc">Build the kernel. Understand the system. A dark navy banner with lime typography and a diagram of ready threads moving into a CPU.</desc>
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" stroke="#253045" stroke-opacity=".45"/></pattern>
+    <linearGradient id="surface" x1="0" y1="0" x2="1440" y2="500" gradientUnits="userSpaceOnUse"><stop stop-color="#0D1424"/><stop offset="1" stop-color="#141F32"/></linearGradient>
+    <linearGradient id="line" x1="920" y1="250" x2="1240" y2="250" gradientUnits="userSpaceOnUse"><stop stop-color="#A9A0FF"/><stop offset="1" stop-color="#D5FC79"/></linearGradient>
+  </defs>
+  <rect width="1440" height="500" rx="24" fill="url(#surface)"/>
+  <rect width="1440" height="500" rx="24" fill="url(#grid)"/>
+  <rect x="1" y="1" width="1438" height="498" rx="23" stroke="#2A354B"/>
+  <path d="M72 74H90V92H72V74Z" fill="#D5FC79"/>
+  <path d="M96 74H114V92H96V74Z" fill="#D5FC79" fill-opacity=".35"/>
+  <text x="130" y="89" fill="#E7ECF5" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="3">JUNGLE / TEAM 06</text>
+  <rect x="1108" y="59" width="256" height="42" rx="21" fill="#1C2A31" stroke="#465D45"/>
+  <circle cx="1133" cy="80" r="5" fill="#D5FC79"/>
+  <text x="1150" y="86" fill="#D5FC79" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="1.5">PROJECT 01 / THREADS</text>
+  <text x="66" y="263" fill="#D5FC79" font-family="Arial, Helvetica, sans-serif" font-size="142" font-weight="900" letter-spacing="-8">PINTOS</text>
+  <text x="76" y="322" fill="#F4F6FA" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="600">Build the kernel. Understand the system.</text>
+  <text x="77" y="357" fill="#9CAAC0" font-family="Arial, Helvetica, sans-serif" font-size="17">Threads, synchronization &amp; scheduling — from the inside.</text>
+  <path d="M72 408H1368" stroke="#2D394E"/>
+  <text x="76" y="452" fill="#DCE3EF" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="1.6">x86-64</text>
+  <text x="228" y="452" fill="#8F9EB7" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="1.2">C / QEMU / DOCKER</text>
+  <text x="1261" y="452" fill="#DCE3EF" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="1.4">27 TESTS</text>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="840" y="162" fill="#93A1B8" font-size="13" letter-spacing="2.5">READY QUEUE</text>
+    <rect x="836" y="182" width="180" height="52" rx="10" fill="#202840" stroke="#555077"/>
+    <circle cx="858" cy="208" r="5" fill="#B1A7FF"/><text x="876" y="214" fill="#CEC8FF" font-size="16">thread_01</text><text x="978" y="214" fill="#8D86B4" font-size="12">63</text>
+    <rect x="836" y="246" width="180" height="52" rx="10" fill="#19243A" stroke="#3A465E"/>
+    <circle cx="858" cy="272" r="5" fill="#7B8AA4"/><text x="876" y="278" fill="#AAB7CF" font-size="16">thread_02</text><text x="978" y="278" fill="#7B8AA4" font-size="12">31</text>
+    <rect x="836" y="310" width="180" height="52" rx="10" fill="#19243A" stroke="#3A465E"/>
+    <circle cx="858" cy="336" r="5" fill="#7B8AA4"/><text x="876" y="342" fill="#AAB7CF" font-size="16">thread_03</text><text x="978" y="342" fill="#7B8AA4" font-size="12">10</text>
+    <path d="M1016 208H1076V272H1140" stroke="url(#line)" stroke-width="3"/>
+    <path d="M1127 264L1140 272L1127 280" stroke="#D5FC79" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="1150" y="199" width="146" height="146" rx="20" fill="#1F2E2B" stroke="#D5FC79" stroke-width="2"/>
+    <rect x="1163" y="212" width="120" height="120" rx="12" stroke="#52664A"/>
+    <path d="M1174 183V199M1198 183V199M1222 183V199M1246 183V199M1270 183V199M1174 345V361M1198 345V361M1222 345V361M1246 345V361M1270 345V361M1134 223H1150M1134 247H1150M1134 295H1150M1134 319H1150M1296 223H1312M1296 247H1312M1296 271H1312M1296 295H1312M1296 319H1312" stroke="#728956" stroke-width="3"/>
+    <text x="1223" y="274" text-anchor="middle" fill="#D5FC79" font-size="33" font-weight="700">CPU</text>
+    <text x="1223" y="301" text-anchor="middle" fill="#AFC697" font-size="12" letter-spacing="2">RUNNING</text>
+  </g>
+</svg>
