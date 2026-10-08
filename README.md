@@ -1,131 +1,204 @@
-# 📘 Docker기반 Pintos 개발 환경 구축 가이드 
+<p align="center">
+  <img src="assets/readme-hero.svg" alt="Pintos — Jungle Team 06. Build the kernel. Understand the system." width="100%" />
+</p>
 
-이 문서는 **Windows**와 **macOS** 사용자가 Docker와 VSCode DevContainer 기능을 활용하여 Pintos OS 프로젝트를 빠르게 구축할 수 있도록 도와줍니다.
+<div align="center">
 
-[**주의**]
-* ubunbu:22.04 버전은 충분한 테스트와 검증이 되지 않았습니다. 이 점을 주의해서 사용하시기 바랍니다.
+### 🌱 작은 커널에서 시작하는, 시스템에 대한 큰 이해.
 
-[**참고**] 
-* pintos 도커 환경은 `64비트 기반 X86-64` 기반의 `ubuntu:22.04` 버전을 사용합니다.
-   * kaist-pintos는 오리지널 pintos와 달리 64비트 환경을 지원합니다.
-   * 이번 도커 환경은 ubuntu 22.04를 지원하여 vscode의 최신 버전에서 원격 연결이 안되는 문제를 해결하였습니다.
-* pintos 도커 환경은 kaist-pintos에서 추천하는 qemu 에뮬레이터를 설치하고 사용합니다. 
-* pintos 도커 환경은 9주차부터 13주차까지 같은 환경을 사용합니다. 이 기간동안 별도의 개발 환경을 제공하지 않습니다.
-* 기존 도커 환경과 달리 `vscode`와 통합된 디버깅 환경(F5로 시작하는)을 제공하지 않습니다. 디버깅이 필요한 경우 `gdb`를 사용하세요. 
-* vscode에서 터미널을 오픈하면 자동으로 `source /workspaces/pintos_22.04_lab_docker/pintos/activate`를 실행합니다.
+**KRAFTON JUNGLE · WEEK 07 · TEAM 06**
 
----
+스레드를 만들고, 실행 순서를 설계하고, 함께 쓰는 자원을 지킵니다.<br />
+64비트 Pintos 위에서 운영체제의 동작을 직접 구현하고 검증하는 팀 프로젝트입니다.
 
-## 1. Docker란 무엇인가요?
+**[🗂️ Project Board](https://github.com/orgs/Jungle-Pintos-W7-T6/projects/6)** &nbsp; / &nbsp;
+**[🧩 Issues](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues)** &nbsp; / &nbsp;
+**[📘 KAIST Manual](https://casys-kaist.github.io/pintos-kaist/)** &nbsp; / &nbsp;
+**[🚀 Quick Start](#-quick-start)**
 
-**Docker**는 애플리케이션을 어떤 컴퓨터에서든 **동일한 환경에서 실행**할 수 있게 도와주는 **가상화 플랫폼**입니다.  
+</div>
 
-Docker는 다음 구성요소로 이루어져 있습니다:
+<br />
 
-- **Docker Engine**: 컨테이너를 실행하는 핵심 서비스
-- **Docker Image**: 컨테이너 생성에 사용되는 템플릿 (레시피 📃)
-- **Docker Container**: 이미지를 기반으로 생성된 실제 실행 환경 (요리 🍜)
+## 🛠️ What we're building
 
-### ✅ AWS EC2와의 차이점
+이번 주의 초점은 **Project 1 — Threads**입니다. 이미 제공된 스레드 시스템을 읽고, 대기·우선순위·CPU 배분 정책을 확장합니다.
 
-| 구분 | EC2 같은 VM | Docker 컨테이너 |
-|------|-------------|-----------------|
-| 실행 단위 | OS 포함 전체 | 애플리케이션 단위 |
-| 실행 속도 | 느림 (수십 초 이상) | 매우 빠름 (거의 즉시) |
-| 리소스 사용 | 무거움 | 가벼움 |
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>⏰ 01 / WAIT SMARTER</h3>
+      <strong>Alarm Clock</strong>
+      <p>시간을 기다리는 스레드를 블록하고, 기상 시각이 되면 실행 가능한 상태로 돌려놓습니다.</p>
+      <sub>Busy waiting → Blocking</sub>
+    </td>
+    <td width="33%" valign="top">
+      <h3>⚡ 02 / RUN WITH PRIORITY</h3>
+      <strong>Priority Scheduling</strong>
+      <p>높은 우선순위의 스레드를 먼저 실행하고, 락으로 인한 우선순위 역전을 기부로 완화합니다.</p>
+      <sub>Preemption · Synchronization · Donation</sub>
+    </td>
+    <td width="33%" valign="top">
+      <h3>📊 03 / ADAPT TO LOAD</h3>
+      <strong>MLFQS</strong>
+      <p>최근 CPU 사용량과 시스템 부하를 반영해 우선순위를 자동으로 조절합니다.</p>
+      <sub>nice · recent_cpu · load_avg</sub>
+    </td>
+  </tr>
+</table>
 
----
+<br />
 
-## 2. VSCode DevContainer란 무엇인가요?
+## ⚙️ Built on a shared stack
 
-**DevContainer**는 VSCode에서 Docker 컨테이너를 **개발 환경**처럼 사용할 수 있게 해주는 기능입니다.
+| Layer | Stack | Purpose |
+| :--- | :--- | :--- |
+| **Architecture** | x86-64 | KAIST Pintos의 64비트 커널 환경 |
+| **Language** | C · Assembly | 스레드·동기화·문맥 교환 코드 |
+| **Toolchain** | GCC · GNU Make · GDB | 빌드와 디버깅 |
+| **Runtime** | QEMU | 커널 실행과 테스트 |
+| **Workspace** | Ubuntu 22.04 · Docker · VS Code Dev Containers | 팀이 공유하는 개발 환경 |
 
-- 코드를 실행하거나 디버깅할 때 **컨테이너 내부 환경에서 동작**
-- 팀원 간 **환경 차이 없이 동일한 개발 환경 구성** 가능
-- `.devcontainer` 폴더에 정의된 설정을 VSCode가 읽어 자동 구성
+환경 설정은 [Dockerfile](.devcontainer/Dockerfile)과 [devcontainer.json](.devcontainer/devcontainer.json)에 있습니다.
 
----
+<br />
 
-## 3. Docker Desktop 설치하기
+## 🤝 Three tracks. One system.
 
-1. Docker 공식 사이트에서 설치 파일 다운로드:  
-   👉 [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
+구현 범위는 세 트랙으로 나누고, 상태 변화와 실행 흐름은 함께 이해합니다. **개인별 담당 배정은 팀에서 확정합니다.**
 
-2. 설치 후 Docker Desktop 실행  
-   - Windows: Docker 아이콘이 트레이에 떠야 함  
-   - macOS: 상단 메뉴바에 Docker 아이콘 확인
+| Track | Implementation focus | Shared boundary |
+| :---: | :--- | :--- |
+| **A** | Alarm Clock · MLFQS | 타이머 인터럽트, 기상 처리, 스케줄러 갱신 |
+| **B** | 준비 큐 · 우선순위 선점 · 공통 인터페이스 · 통합 조율 | 실행 대상 선택, 우선순위 변경, A·C와의 연결 |
+| **C** | 세마포어·조건 변수 대기 우선순위 · 락 우선순위 기부 | 대기자 선택, 다중·중첩 기부, 락 해제 |
 
----
+**작은 변경을 일찍 공유하고, 경계를 함께 검증합니다.**
 
-## 4. 프로젝트 파일 다운로드 (히스토리 없이)
+- `develop`을 통합 기준으로 사용하고, `main`에는 검증한 변경을 반영합니다.
+- 공통 상태·함수의 변경은 먼저 합의하고, 변경 목적과 관련 테스트를 함께 공유합니다.
+- 각 담당은 자기 기능의 테스트와 실패 분석을 책임집니다. 교차 실패는 관련 담당이 함께 해결합니다.
+- 코드를 작성한 사람 외에도 실행 흐름을 설명할 수 있도록 리뷰합니다.
 
-터미널(CMD, PowerShell, zsh 등)에서 아래 명령어로 프로젝트 폴더만 내려받습니다:
+협업 규칙의 상세 합의는 [팀 협업 룰 이슈 #5](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/5)에서 관리합니다.
+
+<br />
+
+## 🧪 Quality is part of the work
+
+**27 tests to verify the system.** 아래 숫자는 검증 대상이며, 현재 통과 결과를 나타내지 않습니다.
+
+| Test group | Count | What we check |
+| :--- | :---: | :--- |
+| **Alarm Clock** | 6 | 수면·반복 수면·동시 기상·기상 우선순위·0과 음수 대기 |
+| **Priority & Donation** | 12 | 선점·동일 우선순위 순서·동기화 대기·다중 및 중첩 기부 |
+| **MLFQS** | 9 | 시스템 부하·최근 CPU 사용량·공정성·nice·블록된 스레드 갱신 |
+
+서로의 구현이 만나는 테스트는 함께 확인합니다.
+
+| Integration check | Connected tracks |
+| :--- | :--- |
+| [alarm-priority #12](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/12) | Alarm Clock ↔ 우선순위 스케줄링 |
+| [priority-donate-sema #20](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/20) | 우선순위 기부 ↔ 세마포어 대기 |
+| [mlfqs-block #33](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/33) | MLFQS ↔ 블록·기상·스케줄링 |
+
+진행 상황과 검증 기록은 **[🗂️ Project Board](https://github.com/orgs/Jungle-Pintos-W7-T6/projects/6)**에서 관리합니다.
+
+<br />
+
+## 🚀 Quick Start
+
+### 1. 팀 저장소 가져오기
+
+호스트 터미널에서 실행합니다. Windows는 PowerShell, macOS·Linux는 기본 터미널을 사용합니다.
 
 ```bash
-git clone --depth=1 https://github.com/krafton-jungle/pintos_22.04_lab_docker.git 
+git clone https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker.git
+cd pintos_22.04_lab_docker
+git switch develop
 ```
 
-- `--depth=1` 옵션은 git commit 히스토리를 생략하고 **최신 파일만 가져옵니다.**
+### 2. 개발 컨테이너 열기
 
-### 📂 다운로드 후 폴더 구조 설명
+1. [Docker Desktop](https://www.docker.com/products/docker-desktop/)을 설치하고 실행합니다. Linux는 Docker Engine을 사용할 수 있습니다.
+2. [VS Code](https://code.visualstudio.com/)와 [Dev Containers 확장](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)을 설치합니다.
+3. VS Code에서 저장소의 최상위 폴더를 엽니다.
+4. 명령 팔레트에서 **`Dev Containers: Reopen in Container`**를 선택합니다.
 
+컨테이너에는 Git·GCC·Make·GDB·QEMU가 설치됩니다. 설정 상세는 [VS Code 공식 안내](https://code.visualstudio.com/docs/devcontainers/containers)를 참고합니다.
+
+### 3. 빌드와 테스트
+
+**컨테이너 안의 터미널**에서 실행합니다.
+
+```bash
+cd /workspaces/pintos_22.04_lab_docker
+source pintos/activate
+cd pintos/threads
+make
+make check
 ```
+
+테스트 결과는 `pintos/threads/build/results`와 각 테스트의 `.result`, `.output`, `.errors`에 생성됩니다. `make check`는 MLFQS 테스트에 필요한 실행 옵션도 적용합니다.
+
+<details>
+<summary><strong>🔧 환경·디버깅 메모</strong></summary>
+
+- 이 환경은 `linux/amd64` 기반 Ubuntu 22.04를 사용합니다. 호스트 환경에 따라 문제가 생기면 실행 환경과 로그를 함께 기록합니다.
+- 커널 디버깅은 GDB를 사용합니다. 기본 저장소에는 VS Code의 F5 디버깅 구성이 제공되지 않습니다.
+- Windows와 컨테이너에서 같은 저장소를 사용할 때는 줄바꿈 설정을 맞춥니다. 전체 파일이 변경으로 표시되면 실제 코드 차이와 줄바꿈 차이를 확인합니다.
+- GitHub 인증 설정은 [Dev Containers의 Git 인증 공유 안내](https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials)를 참고합니다.
+
+</details>
+
+<br />
+
+## 🧭 Read the code. Trace the state.
+
+```text
 pintos_22.04_lab_docker/
-├── .devcontainer/
-│   ├── devcontainer.json      # VSCode에서 컨테이너 환경 설정
-│   └── Dockerfile             # pintos 개발 환경 도커 이미지 정의
-│
-├── pintos
-│   ├── threads                # 9주차 threads 프로젝트 폴더
-│   ├── userprog               # 10-11주차 user program 프로젝트 폴더
-│   └── vm                     # 12-13주차 virtual memory 프로젝트 폴더
-│
-└── README.md                  # 현재 문서
-```
----
-
-## 5. VSCode에서 해당 프로젝트 폴더 열기
-
-1. VSCode를 실행
-2. `파일 → 폴더 열기`로 방금 클론한 `pintos_22.04_lab_docker` 폴더를 선택
-
----
-
-## 6. 개발 컨테이너: 컨테이너에서 열기
-
-1. VSCode에서 `Ctrl+Shift+P` (Windows/Linux) 또는 `Cmd+Shift+P` (macOS)를 누릅니다.
-2. 명령어 팔레트에서 `Dev Containers: Reopen in Container`를 선택합니다.
-3. 이후 컨테이너가 자동으로 실행되고 빌드됩니다. 처음 컨테이너를 열면 빌드하는 시간이 오래걸릴 수 있습니다. 빌드 후, 프로젝트가 **컨테이너 안에서 실행됨**.
-
----
-
-## 7. C 파일에 브레이크포인트 설정 후 디버깅 (F5)
-pintos 랩에서는 vscode기반의 디버깅을 지원하지 않습니다. 
-
----
-## 8. 새로운 Git 리포지토리에 Commit & Push 하기
-
-금주 프로젝트를 개인 Git 리포와 같은 다른 리포지토리에 업로드하려면, 기존 Git 연결을 제거하고 새롭게 초기화해야 합니다.
-
-### ✅ 완전히 새로운 Git 리포로 업로드하는 방법
-
-아래 명령어를 순서대로 실행하세요:
-
-```bash
-rm -rf .git
-git init
-git remote add origin https://github.com/myusername/my-new-repo.git
-git add .
-git commit -m "Clean start"
-git push -u origin main
+├── .devcontainer/          # 팀 개발 환경
+├── assets/                 # README 시각 자료
+├── pintos/
+│   ├── threads/            # 스레드·스케줄러·동기화
+│   ├── devices/            # 타이머와 장치
+│   ├── include/            # 구조체·인터페이스
+│   ├── lib/kernel/         # 리스트 등 커널 자료구조
+│   ├── tests/threads/      # Project 1 테스트
+│   ├── userprog/           # 사용자 프로그램
+│   ├── vm/                 # 가상 메모리
+│   └── filesys/            # 파일 시스템
+└── README.md
 ```
 
-### 📌 설명
+처음 읽을 코드: **[thread.h](pintos/include/threads/thread.h)** → **[list.h](pintos/include/lib/kernel/list.h)** → **[thread.c](pintos/threads/thread.c)** → **[timer.c](pintos/devices/timer.c)** → **[synch.c](pintos/threads/synch.c)**.
 
-- `rm -rf .git`: 기존 Git 기록과 연결을 완전히 삭제합니다.
-- `git init`: 현재 폴더를 새로운 Git 리포지토리로 초기화합니다.
-- `git remote add origin ...`: 새로운 리포지토리 주소를 origin으로 등록합니다.
-- `git add .` 및 `git commit`: 모든 파일을 커밋합니다.
-- `git push`: 새로운 리포에 최초 업로드(Push)합니다.
+<br />
 
-이 과정을 거치면 기존 리포와의 연결은 완전히 제거되고, **새로운 독립적인 프로젝트로 관리**할 수 있습니다.
+## 📚 Learning is a deliverable
+
+과제 목적 → 필요한 개념 → 자료구조 → 스레드 상태 → 실제 코드 → 테스트를 연결합니다.
+
+구현은 직접 하고, AI는 개념 설명·힌트·코드 읽기·리뷰·디버깅에 활용합니다. 테스트가 확인하는 동작과 코드의 상태 변화를 자기 말로 설명하는 것까지 학습 목표에 포함합니다.
+
+| Team record | Link |
+| :--- | :--- |
+| 이번 주의 역량 목표 | [목표 수립 #1](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/1) |
+| 역량 달성률 평가 | [달성률 평가 #2](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/2) |
+| What I Learned | [WIL 작성 #4](https://github.com/Jungle-Pintos-W7-T6/pintos_22.04_lab_docker/issues/4) |
+
+<br />
+
+---
+
+<div align="center">
+
+**🌴 JUNGLE TEAM 06**<br />
+<sub>Build together. Understand together.</sub>
+
+<br /><br />
+
+<sub>Based on <a href="https://github.com/casys-kaist/pintos-kaist">KAIST Pintos</a> and the <a href="https://github.com/krafton-jungle/pintos_22.04_lab_docker">Krafton Jungle Docker environment</a>.<br />
+원본 및 수정 코드의 라이선스는 <a href="pintos/LICENSE">pintos/LICENSE</a>를 따릅니다.</sub>
+
+</div>
