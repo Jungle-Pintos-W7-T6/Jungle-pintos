@@ -32,6 +32,19 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* nuri. list_max()에서 우선도를 비교할 비교 함수 구현
+   'max'니까 작은 쪽을 false로 반환하도록 설계
+   고로 우선순위가 낮은 스레드를 작은 원소로 취급해야함. */
+static bool
+thread_priority_less(const struct list_elem *a,
+					 const struct list_elem *b,
+					 void *aux) {
+	struct thread *t_a = list_entry(a, struct thread, elem);
+	struct thread *t_b = list_entry(b, struct thread, elem);
+
+	return (t_a->priority < t_b->priority);
+}
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -65,6 +78,7 @@ sema_down (struct semaphore *sema) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
+	// 하술된 while문은 깨어난 스레드가 실제로 자원을 획득할 수 있는지 다시 확인하는 역할
 	while (sema->value == 0) {
 		list_push_back (&sema->waiters, &thread_current ()->elem);
 		thread_block ();
@@ -102,18 +116,55 @@ sema_try_down (struct semaphore *sema) {
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
+/* nuri. 기존 방식은 FIFO여서 우선순위가 높은 순으로 깨우기 위해 변경
+   다만 우선순위 높은 순으로 정렬한 것은 아니고 우선순위 높은 쓰레드를 탐색 후 깨운 것*/
 void
 sema_up (struct semaphore *sema) {
 	enum intr_level old_level;
+	struct thread *max_thread = NULL;
+	bool should_preempt = false; // CPU를 양보해야 하는지 저장하는 변수
 
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
+	if (!list_empty (&sema->waiters)) {
+		struct list_elem *max_elem;
+		
+		max_elem = list_max(&sema->waiters, thread_priority_less, NULL);
+		list_remove(max_elem);
+
+		//max_elem이 있는 thread의 주소를 얻은 후, ready list로 이동
+		max_thread = list_entry(max_elem, struct thread, elem);
+		thread_unblock(max_thread);
+	}
 	sema->value++;
+
+	should_preempt = (max_thread != NULL &&
+					  max_thread->priority > thread_current()->priority);
 	intr_set_level (old_level);
+
+	/* nuri. what if? 아래 조건문에 도달하기 전에 타이머 인터럽트가 발생한다면?
+	   scenario: 우선순위 20의 A, 우선순위 50의 B 쓰레드 가정
+	   1. A가 sema_up() 실행
+	   2. thread_unblock(B)로 B가 ready 상태가 됨
+	   3. should_preempt = TRUE가 저장
+	   4. A가 intr_set_level(old_level)로 인터럽트 활성화
+	   5. 바로 이 순간 타이머 인터럽트 발생
+	   6. 그래서 ready list에 있던 B가 running됨
+	   7. 이후 다시 A가 실행되면 if (should_preempt)부터 실행
+	   8. B는 이미 실행을 마쳤거나, blocked 상태일 수도 있는데 A의 should_preempt는 True인 상황
+	   Con) A가 불필요하게 thread_yield()호출 가능성 있음 */
+
+	/* nuri. 우선순위가 높은 쓰레드를 깨웠는데, 현재 실행 중인 쓰레드가 우선순위가 낮다면
+	   CPU를 양보할 수 있는 조건문*/
+	if (should_preempt) {
+		if (intr_context()) {
+			intr_yield_on_return();
+		}
+		else {
+			thread_yield();
+		}
+	}
 }
 
 static void sema_test_helper (void *sema_);
