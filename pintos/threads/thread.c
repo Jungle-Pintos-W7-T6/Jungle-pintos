@@ -311,7 +311,25 @@ void thread_yield(void)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
 {
-	thread_current()->priority = new_priority;
+	struct thread *current = thread_current();
+	enum intr_level old_level = intr_disable();
+
+	current->original_priority = new_priority;
+	current->priority = current->original_priority;
+
+	struct list_elem *e = list_begin(&current->donations);
+
+	while (e != list_end(&current->donations)) {
+		struct thread *donor = 
+			list_entry(e, struct thread, donation_elem);
+		
+		if (current->priority < donor->priority) {
+			current->priority = donor->priority;
+		}
+
+		e = list_next(e);
+	}
+	intr_set_level(old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -411,6 +429,12 @@ init_thread(struct thread *t, const char *name, int priority)
 	strlcpy(t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
+
+	/* nuri. priority donation 초기화 */
+	t->original_priority = priority; /* 기부 받기 전의 본인의 우선순위 */
+	list_init(&t->donations); /* 기부한 스레드들을 관리하는 리스트 */
+	t->wait_on_lock = NULL; /* 처음에는 lock이 없으니 NULL값 */
+
 	t->magic = THREAD_MAGIC;
 }
 
