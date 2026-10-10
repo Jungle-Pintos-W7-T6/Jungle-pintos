@@ -40,6 +40,16 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
+/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 
+   인터럽트 안에서는 intr_yield_on_return() 사용. */
+void thread_check_preemption(void);
+
+/* YJ: 변경된 우선순위를 준비 큐의 실행 순서에 반영.
+   이 함수 자체는 CPU를 양보하지 않음 */
+void thread_priority_changed(struct thread *t);
+
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux);
+
 /* Statistics. */
 static long long idle_ticks;   /* # of timer ticks spent idle. */
 static long long kernel_ticks; /* # of timer ticks in kernel threads. */
@@ -238,8 +248,9 @@ void thread_unblock(struct thread *t)
 
 	old_level = intr_disable();
 	ASSERT(t->status == THREAD_BLOCKED);
-	list_push_back(&ready_list, &t->elem);
-	t->status = THREAD_READY;
+	//list_push_back(&ready_list, &t->elem);			// YJ TODO: 무조건 뒤에 넣는 방식을 우선순위에 맞는 위치에 넣는 방식으로 변경
+	list_insert_ordered(&ready_list, &t->elem, priority_more, NULL);				// 이유: BLOCKED에서 깨어난 스레드가 준비 큐에 합류하는 입구. 기존의 인터럽트 끄기 → 삽입 → READY 표시 → 이전 인터럽트 상태 복원 순서는 유지.
+	t->status = THREAD_READY;						
 	intr_set_level(old_level);
 }
 
@@ -303,9 +314,25 @@ void thread_yield(void)
 
 	old_level = intr_disable();
 	if (curr != idle_thread)
-		list_push_back(&ready_list, &curr->elem);
-	do_schedule(THREAD_READY);
+	//	list_push_back(&ready_list, &curr->elem);		// YJ TODO: CPU를 양보한 현재 스레드도 동일한 기준으로 다시 삽입
+		list_insert_ordered(&ready_list, &curr->elem, priority_more, NULL);							// 이유: 양보한 스레드는 여전히 실행 가능하므로 준비 큐에 돌아가야. 유휴 스레드 제외 조건과 삽입 → READY 전환·스케줄링 → 인터럽트 복원 흐름은 유지.
+	do_schedule(THREAD_READY);								
 	intr_set_level(old_level);
+}
+
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux){
+	struct thread *t_prev;
+	struct thread *t_next;	
+
+	ASSERT(elem_prev != NULL);		// YJ TODO: 만약 list_insert_ordered와 매개변수가 같으면 ASSERT 지웁시다
+	ASSERT(elem_next != NULL);		// YJ TODO: 만약 list_insert_ordered와 매개변수가 같으면 ASSERT 지웁시다
+
+	t_prev = list_entry(elem_prev, struct thread, elem);	// YJ: elem_prev(요소의 주소) - elem(요소의 주소와 스레드의 시작 주소 사이의 거리) = 스레드 시작 주소
+	t_next = list_entry(elem_next, struct thread, elem);	
+	
+	bool priority_res = t_prev->priority > t_next->priority;
+
+	return priority_res;
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -318,6 +345,18 @@ void thread_set_priority(int new_priority)
 int thread_get_priority(void)
 {
 	return thread_current()->priority;
+}
+
+/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 
+   인터럽트 안에서는 intr_yield_on_return() 사용. */
+void thread_check_preemption(void){
+
+}
+
+/* YJ: 변경된 우선순위를 준비 큐의 실행 순서에 반영.
+   이 함수 자체는 CPU를 양보하지 않음 */
+void thread_priority_changed(struct thread *t){
+	 
 }
 
 /* Sets the current thread's nice value to NICE. */
