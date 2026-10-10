@@ -97,6 +97,9 @@ void timer_sleep(int64_t ticks)
 	/* start + ticks로 알람 설정. 0또는 음수면 잠들지 않고 반환. */
 	if (ticks <= 0)
 		return;
+	/* 오버플로우 감지 */
+	if (ticks > INT64_MAX - start)
+		return;
 	thread_sleep(start + ticks);
 }
 

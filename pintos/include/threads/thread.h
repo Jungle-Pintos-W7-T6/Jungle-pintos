@@ -80,13 +80,13 @@ typedef int tid_t;
  * set to THREAD_MAGIC.  Stack overflow will normally change this
  * value, triggering the assertion. */
 
-/* `elem' 멤버는 두 가지 용도로 사용됩니다.
- * 이는 실행 큐(thread.c)의 요소이거나,
+/* 멤버 'elem'는 세 가지 용도로 사용됩니다.
+ * 실행 큐(thread.c)의 요소이거나,
+ * 수면 리스트(thread.c)의 요소이거나,
  * 세마포어 대기 목록(synch.c)의 요소일 수 있습니다.
- * 이 두 가지 방식으로 사용될 수 있는 이유는 이 두 상태가 상호 배타적이기 때문입니다.
  *
- * 즉, 실행 대기열에는 준비 상태인 스레드만 포함되는 반면,
- * 세마포어 대기 목록에는 차단 상태인 스레드만 포함됩니다. */
+ * 각 상태는 상호 배타적입니다.
+ * 하나의 elem은 동시에 위의 셋 중, 하나의 리스트에만 속합니다. */
 struct thread
 {
 	/* Owned by thread.c. */
