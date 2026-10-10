@@ -94,7 +94,7 @@ struct thread
 	enum thread_status status; /* 스레드 상태 */
 	char name[16];			   /* 이름 (for debugging purposes). */
 	int priority;			   /* 우선순위 */
-	uint64_t alarm;			   /* Sleep 시 기상 시각 */
+	int64_t alarm;			   /* Sleep 시 기상 시각 */
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem; /* 리스트 요소 */
@@ -137,7 +137,7 @@ const char *thread_name(void);
 void thread_exit(void) NO_RETURN;
 void thread_yield(void);
 void thread_sleep(int64_t alarm);
-void thread_awake(struct list_elem *e);
+void thread_awake(int64_t ticks);
 
 int thread_get_priority(void);
 void thread_set_priority(int);

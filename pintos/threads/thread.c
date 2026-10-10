@@ -32,9 +32,6 @@ static struct list ready_list;
    해당 리스트 안의 스레드들은 BLOCKED 상태를 가진다.*/
 static struct list sleep_list;
 
-/* sleep_list 포인터 */
-static struct list_elem *sleep_elem_next;
-
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -155,7 +152,6 @@ void thread_tick(void)
 #endif
 	else
 		kernel_ticks++;
-
 	/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
 		intr_yield_on_return();
@@ -347,18 +343,32 @@ void thread_sleep(int64_t alarm)
 
 /* 시간이 된 스레드를 깨워서 READY 큐로 넣습니다.
    sleep_list에서 먼저 제거된뒤, ready_list로 들어갑니다. */
-void thread_awake(struct list_elem *e)
+void thread_awake(int64_t ticks)
 {
+	struct list_elem *cur;
+	struct list_elem *next;
+	struct list_elem *tail;
 	enum intr_level old_level;
+
+	/* sleep_list가 비어있으면 종료 */
+	if (list_empty(&sleep_list))
+		return;
+
 	/* 인터럽트 보호 시작 */
 	old_level = intr_disable();
 
+	cur = list_front(&sleep_list);
+	tail = list_tail(&sleep_list);
 	/* 시간이 다 된 스레드를 sleep_list에서 제거 */
-	sleep_elem_next = list_remove(e);
-
-	/* 상태를 READY로 변경 */
-	thread_unblock(list_entry(e, struct thread, elem));
-
+	/* TODO: 기타 우선순위를 고려하여서 READY 큐에 넣어야 하는가?
+	   만약 작업이 필요하다 하면, 내 범위인가?
+	   그렇지 않다면, 팀원의 함수가 필요한가? */
+	while (cur != tail && list_entry(cur, struct thread, elem)->alarm <= ticks)
+	{
+		next = list_remove(cur);
+		thread_unblock(list_entry(cur, struct thread, elem));
+		cur = next;
+	}
 	/* 인터럽트 보호 해제 */
 	intr_set_level(old_level);
 }
@@ -665,7 +675,7 @@ allocate_tid(void)
    두 번째 인자가 더 빠를 시 0을 반환합니다.
    */
 static bool
-compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux)
+compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
 	/* a와 b의 엔트리 */
 	struct thread *a_entry = list_entry(a, struct thread, elem);
