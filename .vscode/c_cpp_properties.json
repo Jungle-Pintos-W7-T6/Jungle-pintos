@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Pintos (Docker)",
+            "compilerPath": "/usr/bin/gcc",
+            "compilerArgs": [
+                "-nostdinc"
+            ],
+            "intelliSenseMode": "linux-gcc-x64",
+            "includePath": [
+                "${workspaceFolder}/pintos",
+                "${workspaceFolder}/pintos/include/lib",
+                "${workspaceFolder}/pintos/include",
+                "${workspaceFolder}/pintos/include/lib/kernel"
+            ]
+        }
+    ],
+    "version": 4
+}

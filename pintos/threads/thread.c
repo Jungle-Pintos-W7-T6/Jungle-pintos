@@ -28,6 +28,13 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* Sleep에 들어간 스레드의 리스트.
+   해당 리스트 안의 스레드들은 BLOCKED 상태를 가진다.*/
+static struct list sleep_list;
+
+/* sleep_list 포인터 */
+static struct list_elem *sleep_elem_next;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -62,6 +69,7 @@ static void init_thread(struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
+static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -106,6 +114,7 @@ void thread_init(void)
 	/* Init the globla thread context */
 	lock_init(&tid_lock);
 	list_init(&ready_list);
+	list_init(&sleep_list);
 	list_init(&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -208,8 +217,7 @@ tid_t thread_create(const char *name, int priority,
 	return tid;
 }
 
-/* Puts the current thread to sleep.  It will not be scheduled
-   again until awoken by thread_unblock().
+/* 현재 스레드를 BLOCKED로 바꾸고 schedule()을 호출한다.
 
    This function must be called with interrupts turned off.  It
    is usually a better idea to use one of the synchronization
@@ -218,7 +226,9 @@ void thread_block(void)
 {
 	ASSERT(!intr_context());
 	ASSERT(intr_get_level() == INTR_OFF);
+	/* 현재 스레드의 상태를 BLOCKED로 설정한다. */
 	thread_current()->status = THREAD_BLOCKED;
+	/* 이어서 기다리고 있는 스레드들을 스케줄링 한다. */
 	schedule();
 }
 
@@ -238,6 +248,7 @@ void thread_unblock(struct thread *t)
 
 	old_level = intr_disable();
 	ASSERT(t->status == THREAD_BLOCKED);
+	/* 스레드를 READY 큐에 넣고, 준비 상태로 변경한다. */
 	list_push_back(&ready_list, &t->elem);
 	t->status = THREAD_READY;
 	intr_set_level(old_level);
@@ -292,7 +303,7 @@ void thread_exit(void)
 	NOT_REACHED();
 }
 
-/* Yields the CPU.  The current thread is not put to sleep and
+/* Yields the CPU. The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
 void thread_yield(void)
 {
@@ -302,9 +313,53 @@ void thread_yield(void)
 	ASSERT(!intr_context());
 
 	old_level = intr_disable();
+	/* 현재 스레드가 idle 상태가 아니면, READY 리스트에 추가한다. */
 	if (curr != idle_thread)
 		list_push_back(&ready_list, &curr->elem);
+
+	/* READY 상태로 스케줄링한다. */
 	do_schedule(THREAD_READY);
+	intr_set_level(old_level);
+}
+
+/* 현재 RUNNING중인 스레드를 sleep 시킵니다.
+   해당 스레드는 BLOCKED 상태로 변경되며, sleep_list로 들어갑니다. */
+void thread_sleep(int64_t alarm)
+{
+	struct thread *curr = thread_current();
+	enum intr_level old_level;
+
+	/* 인터럽트 보호 시작 */
+	old_level = intr_disable();
+
+	/* 알람 설정 */
+	curr->alarm = alarm;
+
+	/* SLEEP 리스트에 시간 우선순위 대로 삽입 */
+	list_insert_ordered(&sleep_list, &(curr->elem), compare_alarm, NULL);
+
+	/* BLOCKED 상태로 변경 */
+	thread_block();
+
+	/* 인터럽트 보호 해제 */
+	intr_set_level(old_level);
+}
+
+/* 시간이 된 스레드를 깨워서 READY 큐로 넣습니다.
+   sleep_list에서 먼저 제거된뒤, ready_list로 들어갑니다. */
+void thread_awake(struct list_elem *e)
+{
+	enum intr_level old_level;
+	/* 인터럽트 보호 시작 */
+	old_level = intr_disable();
+
+	/* 시간이 다 된 스레드를 sleep_list에서 제거 */
+	sleep_elem_next = list_remove(e);
+
+	/* 상태를 READY로 변경 */
+	thread_unblock(list_entry(e, struct thread, elem));
+
+	/* 인터럽트 보호 해제 */
 	intr_set_level(old_level);
 }
 
@@ -544,6 +599,8 @@ do_schedule(int status)
 	schedule();
 }
 
+/* 다음 스레드를 선택하고, 그 스레드를 RUNNING으로 바꾼 뒤,
+   필요한 문맥 교환을 수행한다. */
 static void
 schedule(void)
 {
@@ -553,10 +610,11 @@ schedule(void)
 	ASSERT(intr_get_level() == INTR_OFF);
 	ASSERT(curr->status != THREAD_RUNNING);
 	ASSERT(is_thread(next));
-	/* Mark us as running. */
+
+	/* 다음 스레드의 상태를 RUNNING으로 변경한다. */
 	next->status = THREAD_RUNNING;
 
-	/* Start new time slice. */
+	/* 스레드 실행 시작 시점을 초기화한다. */
 	thread_ticks = 0;
 
 #ifdef USERPROG
@@ -597,4 +655,21 @@ allocate_tid(void)
 	lock_release(&tid_lock);
 
 	return tid;
+}
+
+/* sleep_list에 들어갈 순서를 비교합니다.
+   list_insert_ordered 인자로 사용됩니다.
+
+   sleep_list에는 기상 시각이 빠른 순서로 들어가야 하며,
+   해당 비교 함수는 첫 번째 인자의 기상 시각이 더 빠를 시 1,
+   두 번째 인자가 더 빠를 시 0을 반환합니다.
+   */
+static bool
+compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+	/* a와 b의 엔트리 */
+	struct thread *a_entry = list_entry(a, struct thread, elem);
+	struct thread *b_entry = list_entry(b, struct thread, elem);
+
+	return a_entry->alarm < b_entry->alarm;
 }
