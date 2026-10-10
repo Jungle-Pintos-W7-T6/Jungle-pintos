@@ -215,6 +215,19 @@ tid_t thread_create(const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock(t);
 
+	/*	1. 새 스레드 초기화
+   			우선순위, 실행할 함수, 레지스터 등을 설정해서 실행 가능한 상태로 만든다.
+		2. thread_unblock(t)
+   			새 스레드를 준비 큐에 넣고 READY로 바꾼다.
+		3. thread_check_preemption() ← 지금 위치
+   			준비 큐의 최고 우선순위가 현재 스레드보다 높으면 CPU를 양보한다.
+		4. return tid
+   			현재 스레드가 다시 실행되면 생성한 스레드의 ID를 반환한다.
+thread_unblock() 앞에 두면 새 스레드가 아직 준비 큐에 없어서 비교 대상에 포함되지 않음.
+따라서 준비 큐에 넣은 직후, 생성 함수가 반환하기 전에 검사.
+예를 들어 현재 우선순위가 31, 새 스레드가 40이면, 새 스레드가 thread_create()의 반환보다 먼저 실행될 수 있음.*/
+	thread_check_preemption();		// YJ: 더 높은 우선순위 스레드가 준비(생성)됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용. 
+
 	return tid;
 }
 
@@ -322,7 +335,7 @@ void thread_yield(void)
 
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux){
 	struct thread *t_prev;
-	struct thread *t_next;	
+	struct thread *t_next;
 
 	ASSERT(elem_prev != NULL);		// YJ TODO: 만약 list_insert_ordered와 매개변수가 같으면 ASSERT 지웁시다
 	ASSERT(elem_next != NULL);		// YJ TODO: 만약 list_insert_ordered와 매개변수가 같으면 ASSERT 지웁시다
@@ -330,7 +343,7 @@ bool priority_more(const struct list_elem *elem_prev, const struct list_elem *el
 	t_prev = list_entry(elem_prev, struct thread, elem);	// YJ: elem_prev(요소의 주소) - elem(요소의 주소와 스레드의 시작 주소 사이의 거리) = 스레드 시작 주소
 	t_next = list_entry(elem_next, struct thread, elem);	
 	
-	bool priority_res = t_prev->priority > t_next->priority;
+	bool priority_res = t_prev->priority > t_next->priority; // YJ: 우리가 반환해야 할 참/거짓값. 이전,이후 스레드의 priority값을 비교해서 담음.
 
 	return priority_res;
 }
@@ -347,13 +360,61 @@ int thread_get_priority(void)
 	return thread_current()->priority;
 }
 
-/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 
-   인터럽트 안에서는 intr_yield_on_return() 사용. */
+/* YJ TODO: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 
+   인터럽트 안에서는 intr_yield_on_return() 사용. 
+
+1. 이전 인터럽트 상태를 저장하며 인터럽트를 끈다.
+   큐를 읽고 비교하는 도중 타이머가 실행 순서를 바꾸지 못하도록 보호.
+2. 준비 큐가 비었으면 이전 상태를 복원하고 종료한다.
+   빈 리스트에서 list_front()를 호출하면 안 됨.
+3. 맨 앞 요소를 확인하고, 소속 스레드의 주소를 얻는다.
+   여기서는 확인만 하니까 list_pop_front()를 사용하면 안 됨.
+4. 현재 스레드와 우선순위를 비교한다.
+   준비된 스레드가 엄격히 더 높을 때만 양보.
+5. 양보 방법을 실행 맥락에 따라 선택한다.
+   intr_context()가 참이면 intr_yield_on_return(), 거짓이면 thread_yield()를 사용.
+   인터럽트가 꺼져 있다는 것과 핸들러 안이라는 것은 다름.
+6. 끝에서 이전 인터럽트 상태를 복원한다.
+   thread_yield()로 다른 스레드가 실행돼도, 나중에 돌아오면 이 복원까지 이어서 수행해.
+
+이 함수는 인자와 반환값이 필요 없음. 기존 ready_list와 현재 스레드를 이용하면 됨. 
+우선 본문부터 작성하고, 검토 후 호출 위치를 연결.*/
 void thread_check_preemption(void){
 
+	struct thread *t;		// 준비 큐 맨 앞에서 기다리는 스레드
+	struct thread *t_cur;	// 지금 CPU에서 실행 중인 스레드
+
+	// 이전 인터럽트 상태 보관.
+	enum intr_level old_level;
+
+	// 인터럽트 끄기
+	old_level = intr_disable();
+
+	// 준비 큐가 비었는지 확인. 비어있으면 인터럽트 복원 후 종료
+	if (list_empty(&ready_list) == true){
+		intr_set_level(old_level);
+		return;}
+
+	// 맨 앞 요소를 제거 없이 확인하여, 요소에서 소속 스레드 찾기
+	t = list_entry(list_front(&ready_list), struct thread, elem);
+
+	// 현재 실행 중인 스레드 찾기. 스레드 정보 보관
+	t_cur = thread_current(); 
+	
+	// 인터럽트 핸들러 안인지 확인
+	if (t->priority > t_cur->priority){
+		if (intr_context() == true){intr_yield_on_return();}
+		else {thread_yield();}
+	}
+	
+
+	// 이전 상태 복원.
+	intr_set_level(old_level);
+
+	return;
 }
 
-/* YJ: 변경된 우선순위를 준비 큐의 실행 순서에 반영.
+/* YJ TODO: 변경된 우선순위를 준비 큐의 실행 순서에 반영.
    이 함수 자체는 CPU를 양보하지 않음 */
 void thread_priority_changed(struct thread *t){
 	 
