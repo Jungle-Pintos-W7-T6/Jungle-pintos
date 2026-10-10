@@ -45,6 +45,32 @@ thread_priority_less(const struct list_elem *a,
 	return (t_a->priority < t_b->priority);
 }
 
+/* nuri. 우선순위 기부 함수를 별도 구현 */
+static void
+donate_priority(struct thread *current) {
+	if (current->wait_on_lock == NULL) {
+		return;
+	}
+
+	struct thread *holder = current->wait_on_lock->holder;
+
+	while (holder != NULL) {
+		if (current->priority > holder->priority) {
+			holder->priority = current->priority;
+		}
+
+		if (holder->wait_on_lock == NULL) {
+			break;
+		}
+
+		if (holder->wait_on_lock->holder == NULL) {
+			break;
+		}
+
+		holder = holder->wait_on_lock->holder;
+	}
+}
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -70,6 +96,8 @@ sema_init (struct semaphore *sema, unsigned value) {
    interrupts disabled, but if it sleeps then the next scheduled
    thread will probably turn interrupts back on. This is
    sema_down function. */
+
+/* 사용 권한을 획득하기 위한 함수.*/
 void
 sema_down (struct semaphore *sema) {
 	enum intr_level old_level;
@@ -116,7 +144,8 @@ sema_try_down (struct semaphore *sema) {
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
-/* nuri. 기존 방식은 FIFO여서 우선순위가 높은 순으로 깨우기 위해 변경
+/* nuri. 사용 권한을 반환하고 다음 스레드가 사용할 수 있게 하는 함수. 
+   기존 방식은 FIFO여서 우선순위가 높은 순으로 깨우기 위해 변경
    다만 우선순위 높은 순으로 정렬한 것은 아니고 우선순위 높은 쓰레드를 탐색 후 깨운 것*/
 void
 sema_up (struct semaphore *sema) {
@@ -156,7 +185,8 @@ sema_up (struct semaphore *sema) {
 	   Con) A가 불필요하게 thread_yield()호출 가능성 있음 */
 
 	/* nuri. 우선순위가 높은 쓰레드를 깨웠는데, 현재 실행 중인 쓰레드가 우선순위가 낮다면
-	   CPU를 양보할 수 있는 조건문*/
+	   CPU를 양보할 수 있는 조건문
+	   thread_check_preemption()함수 쓰게될지도 모름 의논해봐야 함*/
 	if (should_preempt) {
 		if (intr_context()) {
 			intr_yield_on_return();
@@ -239,8 +269,34 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	struct thread *current = thread_current();
+
+	enum intr_level old_level = intr_disable(); /* 원자성 확보를 위한 intr 비활성화 */
+	struct thread *holder = lock->holder; // 현재 lock을 소유한 스레드의 주소
+
+	/* nuri.LOCK 소유자가 있다면 priority Donation 처리
+	   우선순위가 높은 스레드가 낮은 스레드의 Lock을 획득하려고 할 때,
+	   sema_down을 호출하면 H는 BLOCKED 상태가 됨 따라서 priority donation 불가능
+	   그래서 낮은 스레드의 우선순위를 높여서 Lock을 realese 할 수 있게 만들어야 함.*/
+
+	/* 다른 스레드가 LOCK을 소유하고 있다면 */
+	if (holder != NULL) {
+
+		current->wait_on_lock = lock;
+
+		list_push_back(&holder->donations,
+					   &current->donation_elem);
+
+		/* nuri. 중첩 priority donation */
+		donate_priority(current);
+		
+	}
+
 	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
+	current->wait_on_lock = NULL; /* 더 이상 기다리는 lock이 없음 */
+	lock->holder = current; /* lock 소유자 등록 */
+
+	intr_set_level(old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -273,8 +329,44 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
+	struct thread *current = thread_current();
+	enum intr_level old_level = intr_disable();
+
+
+	/* 해제하는 lock과 관련된 기부자 제거 */
+	struct list_elem *e = list_begin(&current->donations);
+
+	while (e != list_end(&current->donations)) {
+		struct thread *donor = 
+			list_entry(e, struct thread, donation_elem);
+		
+		if (donor->wait_on_lock == lock) {
+			e = list_remove(e);
+		}
+		else {
+			e = list_next(e);
+		}
+	}
+
+	/* 원래 가지고 있는 우선순위로 초기화*/
+	current->priority = current->original_priority;
+
+	e = list_begin(&current->donations);
+
+	while (e != list_end(&current->donations)) {
+		struct thread *donor =
+			list_entry(e, struct thread, donation_elem);
+		
+		if (current->priority < donor->priority) {
+			current->priority = donor->priority;
+		}
+
+		e = list_next(e);
+	}
+
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
+	intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -291,7 +383,31 @@ lock_held_by_current_thread (const struct lock *lock) {
 struct semaphore_elem {
 	struct list_elem elem;              /* List element. */
 	struct semaphore semaphore;         /* This semaphore. */
+	struct thread *waiter_thread;		/* 조건 변수에서 대기 중인 스레드의 주소를
+										   저장하기 위해 추가한 포인터*/
 };
+
+// /* nuri. 조건 변수의 우선도를 비교할 비교함수 구현*/
+// static bool
+// cond_priority_less(const struct list_elem *a,
+// 				   const struct list_elem *b,
+// 				   void *aux) {
+// 	struct semaphore_elem *s_a = list_entry(a, struct semaphore_elem, elem);
+// 	struct semaphore_elem *s_b = list_entry(b, struct semaphore_elem, elem);
+// 	struct thread *t_a = NULL;
+// 	struct thread *t_b = NULL;
+
+// 	if (!list_empty(&s_a->semaphore.waiters)) {
+// 		t_a = list_entry(list_begin(&s_a->semaphore.waiters),
+// 						struct thread, elem);
+// 	}
+
+// 	if (!list_empty(&s_b->semaphore.waiters)) {
+// 		t_b = list_entry(list_begin(&s_b->semaphore.waiters),
+// 						struct thread, elem);
+// 	}
+	
+// }
 
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
