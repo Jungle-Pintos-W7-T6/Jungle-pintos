@@ -308,7 +308,8 @@ void thread_yield(void)
 	intr_set_level(old_level);
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* 현재 스레드의 기본 우선순위를 변경하고, priority donation을 고려한 유효 우선순위
+   다시 계산 */
 void thread_set_priority(int new_priority)
 {
 	struct thread *current = thread_current();
