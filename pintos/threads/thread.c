@@ -327,8 +327,8 @@ void thread_yield(void)
 
 	old_level = intr_disable();
 	if (curr != idle_thread)
-	//	list_push_back(&ready_list, &curr->elem);		// YJ TODO: CPU를 양보한 현재 스레드도 동일한 기준으로 다시 삽입
-		list_insert_ordered(&ready_list, &curr->elem, priority_more, NULL);							// 이유: 양보한 스레드는 여전히 실행 가능하므로 준비 큐에 돌아가야. 유휴 스레드 제외 조건과 삽입 → READY 전환·스케줄링 → 인터럽트 복원 흐름은 유지.
+	//	list_push_back(&ready_list, &curr->elem);							// YJ TODO: CPU를 양보한 현재 스레드도 동일한 기준으로 다시 삽입
+		list_insert_ordered(&ready_list, &curr->elem, priority_more, NULL);	// 이유: 양보한 스레드는 여전히 실행 가능하므로 준비 큐에 돌아가야. 유휴 스레드 제외 조건과 삽입 → READY 전환·스케줄링 → 인터럽트 복원 흐름은 유지.
 	do_schedule(THREAD_READY);								
 	intr_set_level(old_level);
 }
@@ -342,16 +342,25 @@ bool priority_more(const struct list_elem *elem_prev, const struct list_elem *el
 
 	t_prev = list_entry(elem_prev, struct thread, elem);	// YJ: elem_prev(요소의 주소) - elem(요소의 주소와 스레드의 시작 주소 사이의 거리) = 스레드 시작 주소
 	t_next = list_entry(elem_next, struct thread, elem);	
-	
-	bool priority_res = t_prev->priority > t_next->priority; // YJ: 우리가 반환해야 할 참/거짓값. 이전,이후 스레드의 priority값을 비교해서 담음.
 
-	return priority_res;
+	return t_prev->priority > t_next->priority; // YJ: 우리가 반환해야 할 참/거짓값. 이전,이후 스레드의 priority값을 비교해서 담음.
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
+/* YJ TODO: priority-fifo 통과하려면 thread_set_priority()에 선점 검사를 연결해야 함.
+priority-fifo는 이런 순서로 진행됨.
+1. 현재 스레드 우선순위를 33으로 올린다.
+2. 우선순위 32인 스레드 16개를 생성한다. 현재 스레드보다 낮아서 준비 큐에서 기다린다.
+3. 현재 스레드 우선순위를 31로 낮춘다.
+4. 즉시 CPU를 양보해서, 기다리던 16개가 같은 순서로 반복 실행하도록 한다.**이게 없어서 수정함ㅇㅇ**
+현재 thread_set_priority() (pintos/threads/thread.c:350)는 우선순위 값만 바꾸고 계속 실행. 그래서 4번이 빠져 있음.
+수정한 함수의 내용.
+- 현재 우선순위를 변경한 직후, 기존 thread_check_preemption()으로 양보가 필요한지 검사한다.
+*/
 void thread_set_priority(int new_priority)
 {
 	thread_current()->priority = new_priority;
+	thread_check_preemption(); // 양보가 필요한지 검사하겠습니다.
 }
 
 /* Returns the current thread's priority. */
@@ -391,7 +400,7 @@ void thread_check_preemption(void){
 	old_level = intr_disable();
 
 	// 준비 큐가 비었는지 확인. 비어있으면 인터럽트 복원 후 종료
-	if (list_empty(&ready_list) == true){
+	if (list_empty(&ready_list)){
 		intr_set_level(old_level);
 		return;}
 
