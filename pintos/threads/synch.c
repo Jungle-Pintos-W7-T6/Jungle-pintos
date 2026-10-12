@@ -70,10 +70,17 @@ donate_priority(struct thread *current) {
 	/* current가 받아야하는 lock을 가진 소유자 */
 	struct thread *holder = current->wait_on_lock->holder;
 
-	while (holder != NULL) {
+	/* nuri. [P2] "순환 기부가 인터럽트를 끈 채 끝없이 돕니다."
+	   순환 기부가 발생하면 holder가 NULL이 되지 않아 무한 루프할 수 있으므로
+	   기부 깊이를 최대 8단계로 제한한다. 다만 이는 무한 루프를 방지하는 것이지
+	   스레드 간 lock 교착 상태 자체는 해결하지 못한다.  */
+	int count = 0;
+	while (holder != NULL && count < 8) {
 		if (current->priority > holder->priority) {
 			holder->priority = current->priority;
 		}
+
+		count++;
 
 		/* holder가 다른 lock을 필요로 하지 않으면 기부 종료 */
 		if (holder->wait_on_lock == NULL) {
