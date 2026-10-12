@@ -106,6 +106,13 @@ struct thread
 										   내가 기부자로 등록될 때 사용하는 멤버*/
 	struct lock *wait_on_lock;			/* 스레드가 획득하려고 기다리는 lock */
 
+	/*nuri. [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다.""
+	  donation_target은 기부 대상을 변경할 때 기존 기부 리스트의 소유자를 찾기 위한 멤버
+	  waiting_elem은 BLOCKED뿐 만 아니라 READY 상태인 LOCK 대기자까지 추적하기 위한 멤버*/
+
+	struct thraed *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
+	struct list_elem waiting_elem; /*  lock의 waiting_threads 리스트에 연결할 노드 */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4; /* Page map level 4 */
@@ -147,9 +154,12 @@ void thread_sleep(int64_t alarm);
 void thread_awake(int64_t ticks);
 
 void thread_check_preemption(void); // nuri. synch.c 등 다른 파일에서도 preemption 검사를 위해 추가
+void thread_priority_changed(struct thread *t); // YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
 
 int thread_get_priority(void);
 void thread_set_priority(int);
+/* nuri. synch.c에서도 사용하기 위해 헤더에 priority_more 추가 */
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux);
 
 int thread_get_nice(void);
 void thread_set_nice(int);

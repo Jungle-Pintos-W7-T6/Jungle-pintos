@@ -48,8 +48,7 @@ static struct list destruction_req;
    인터럽트 안에서는 intr_yield_on_return() 사용. */
 void thread_check_preemption(void);
 
-/* YJ: 변경된 우선순위를 준비 큐의 실행 순서에 반영.
-   이 함수 자체는 CPU를 양보하지 않음 */
+/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
 void thread_priority_changed(struct thread *t);
 
 /* Statistics. */
@@ -75,7 +74,8 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 
-static bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
+/* nuri. synch.c에서도 include해서 사용하기 위해 static 상태 삭제 */
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* Returns true if T appears to point to a valid thread. */
@@ -519,10 +519,31 @@ void thread_check_preemption(void)
 	return;
 }
 
-/* YJ TODO: 변경된 우선순위를 준비 큐의 실행 순서에 반영.
-   이 함수 자체는 CPU를 양보하지 않음 */
-void thread_priority_changed(struct thread *t)
-{
+/* YJ TODO: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
+함수의 입력과 책임
+- 입력 t: 우선순위가 이미 변경된 스레드의 주소.
+- t->priority: C가 변경해 둔 새 값.
+- 함수의 책임: 준비 큐 위치 갱신.
+- 반환값: 없음.
+- 기존 자료구조·함수 사용: ready_list, t->elem, priority_more(), list_remove(), list_insert_ordered().
+
+1. 이전 인터럽트 상태를 저장하고 인터럽트를 끈다.
+2. 전달받은 t가 THREAD_READY인지 확인한다.
+3. READY라면 t->elem을 기존 준비 큐 위치에서 제거한다.
+4. 같은 요소를 기존 비교 함수로 우선순위에 맞게 재삽입한다.
+5. 이전 인터럽트 상태를 복원한다. */
+void thread_priority_changed(struct thread *t){
+	enum intr_level old_level = intr_disable();
+
+	if (t->status == THREAD_READY){
+		list_remove(&(t->elem)); // 아 몰루겠어
+		list_insert_ordered(&ready_list, &(t->elem), priority_more, NULL);
+	}
+	
+	// 이전 상태 복원.
+	intr_set_level(old_level);
+
+	return ;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -621,6 +642,8 @@ init_thread(struct thread *t, const char *name, int priority)
 	t->original_priority = priority; /* 기부 받기 전의 본인의 우선순위 */
 	list_init(&t->donations);		 /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
 	t->wait_on_lock = NULL;			 /* 처음에는 lock이 없으니 NULL값 */
+
+	t->donation_target = NULL; /* 새로 생성된 스레드는 아직 누구에게도 우선순위를 기부하지 않았으니 NULL로 초기화 */
 
 	t->magic = THREAD_MAGIC;
 }
