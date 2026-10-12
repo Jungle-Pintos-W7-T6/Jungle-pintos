@@ -157,6 +157,8 @@ void thread_check_preemption(void); // nuri. synch.c 등 다른 파일에서도 
 
 int thread_get_priority(void);
 void thread_set_priority(int);
+/* nuri. synch.c에서도 사용하기 위해 헤더에 priority_more 추가 */
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux);
 
 int thread_get_nice(void);
 void thread_set_nice(int);

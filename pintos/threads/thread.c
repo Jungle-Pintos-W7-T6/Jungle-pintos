@@ -75,7 +75,8 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 
-static bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
+/* nuri. synch.c에서도 include해서 사용하기 위해 static 상태 삭제 */
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* Returns true if T appears to point to a valid thread. */

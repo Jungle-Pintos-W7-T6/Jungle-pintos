@@ -41,15 +41,16 @@
    list_max()는 최종적으로 우선순위가 가장 높은 스레드의 list_elem을 반환한다.
    con) list_max()가 우선순위가 가장 높은 스레드를 선택하도록, 우선순위가 낮은
    스레드를 작은 원소로 판단하는 비교 함수. */
-static bool
-thread_priority_less(const struct list_elem *a,
-					 const struct list_elem *b,
-					 void *aux) {
-	struct thread *t_a = list_entry(a, struct thread, elem);
-	struct thread *t_b = list_entry(b, struct thread, elem);
+/* nuri. thread.c의 priority_more 함수와 기능이 겹치므로 주석 처리 후 priority_more 함수 사용 */
+// static bool
+// thread_priority_less(const struct list_elem *a,
+// 					 const struct list_elem *b,
+// 					 void *aux) {
+// 	struct thread *t_a = list_entry(a, struct thread, elem);
+// 	struct thread *t_b = list_entry(b, struct thread, elem);
 
-	return (t_a->priority < t_b->priority);
-}
+// 	return (t_a->priority < t_b->priority);
+// }
 
 /* nuri. lock_acquire()에서 사용할 중첩(연쇄) priority donation을 처리하는 함수.
    1. current가 다른 스레드가 소유한 lock을 기다리는 경우,
@@ -216,7 +217,7 @@ sema_up (struct semaphore *sema) {
 	if (!list_empty (&sema->waiters)) {
 		struct list_elem *max_elem;
 		
-		max_elem = list_max(&sema->waiters, thread_priority_less, NULL);
+		max_elem = list_min(&sema->waiters, priority_more, NULL);
 		list_remove(max_elem);
 
 		//max_elem이 있는 thread의 주소를 얻은 후, ready list로 이동
