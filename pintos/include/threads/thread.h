@@ -146,6 +146,8 @@ void thread_yield(void);
 void thread_sleep(int64_t alarm);
 void thread_awake(int64_t ticks);
 
+void thread_check_preemption(void); // nuri. synch.c 등 다른 파일에서도 preemption 검사를 위해 추가
+
 int thread_get_priority(void);
 void thread_set_priority(int);
 

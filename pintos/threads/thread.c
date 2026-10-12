@@ -615,9 +615,9 @@ init_thread(struct thread *t, const char *name, int priority)
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
 
-	/* nuri. priority donation 초기화 */
+	/* nuri. priority donation 관련 멤버 초기화 */
 	t->original_priority = priority; /* 기부 받기 전의 본인의 우선순위 */
-	list_init(&t->donations); /* 기부한 스레드들을 관리하는 리스트 */
+	list_init(&t->donations); /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
 	t->wait_on_lock = NULL; /* 처음에는 lock이 없으니 NULL값 */
 
 	t->magic = THREAD_MAGIC;
