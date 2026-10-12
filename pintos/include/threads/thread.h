@@ -97,9 +97,10 @@ struct thread {
 
 	/*nuri. priority donation에 필요한 멤버들 추가*/
 	int original_priority;				/* 현재 쓰레드의 원래 우선 순위 */
-	struct list donations;				/* 자신에게 우선순위를 기부한 스레드 리스트 */
-	struct list_elem donation_elem;		/* 기부자를 donations 리스트에 연결하는 노드 */
-	struct lock *wait_on_lock;			/* 기부자가 현재 기다리는 lock */
+	struct list donations;				/* 자신에게 우선순위를 기부한 스레드들의 리스트 */
+	struct list_elem donation_elem;		/* 이 스레드를 다른 스레드의 donations 리스트에 연결하는 노드
+										   내가 기부자로 등록될 때 사용하는 멤버*/
+	struct lock *wait_on_lock;			/* 스레드가 획득하려고 기다리는 lock */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

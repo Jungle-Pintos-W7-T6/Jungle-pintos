@@ -205,6 +205,9 @@ tid_t thread_create(const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock(t);
 
+	// if (t->priority > thread_current()->priority) {
+	// 	thread_yield();
+	// }
 	return tid;
 }
 
@@ -308,18 +311,28 @@ void thread_yield(void)
 	intr_set_level(old_level);
 }
 
-/* 현재 스레드의 기본 우선순위를 변경하고, priority donation을 고려한 유효 우선순위
-   다시 계산 */
+/* nuri. 현재 스레드의 기본 우선순위를 변경하고, priority donation을 고려한 유효 우선순위
+   다시 계산 일시적인 변경이 아닌, 애초에 우선순위를 변경하고 싶을 때 사용하는 함수
+   따라서 이 함수로 test하고자 하는 것은 특정 스레드의 우선순위가 바뀌면, donation
+   여부가 달라지는지, donation 받을 스레드보다 우선순위가 높아졌다면 donate 받을 필요
+   없으니까 그걸 리스트를 순회하면서 다시 계산하려는 의도를 가진 함수다.
+   사용하는 test_case: priority change, priority-donate-lower */
 void thread_set_priority(int new_priority)
 {
-	struct thread *current = thread_current();
+	struct thread *current = thread_current(); // 현재 running thread 주소를 받음
 	enum intr_level old_level = intr_disable();
 
-	current->original_priority = new_priority;
+	/* 기본 우선순위 변경 donation 때문에 일시적으로 바꾸는게 아니라
+	   그냥 이 스레드의 우선순위를 변경하려는 의도 */
+	current->original_priority = new_priority; 
 	current->priority = current->original_priority;
 
 	struct list_elem *e = list_begin(&current->donations);
 
+
+	/* nuri. 자신에게 우선순위를 기부한 스레드를 순회하면서 기부받은 우선순위가
+	   바뀐 우선순위보다 높으면 다시 그 우선순위로 변경. 이 때 바뀐 우선순위는 lock_release()
+	   에서 원래 우선순위로 재변경 */
 	while (e != list_end(&current->donations)) {
 		struct thread *donor = 
 			list_entry(e, struct thread, donation_elem);

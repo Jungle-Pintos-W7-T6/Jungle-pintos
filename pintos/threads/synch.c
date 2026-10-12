@@ -32,9 +32,15 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
-/* nuri. list_max()에서 우선도를 비교할 비교 함수 구현
-   'max'니까 작은 쪽을 false로 반환하도록 설계
-   고로 우선순위가 낮은 스레드를 작은 원소로 취급해야함. */
+/* nuri. list_max()에서 사용할 스레드 우선순위 비교 함수.
+   1. list_max()가 받는 인자 list_less_func이 true면 a를 b보다 작은 원소로 판단한다.
+   따라서 우선순위가 낮은 스레드를 작은 원소로 취급하도록 구현한 것이다.
+   2. list_entry를 통해 list_elem이 속한 thread의 주소를 얻고,
+   두 스레드의 priority를 비교한다.
+   3. t_a->priority < t_b->priority면 true를 반환하므로,
+   list_max()는 최종적으로 우선순위가 가장 높은 스레드의 list_elem을 반환한다.
+   con) list_max()가 우선순위가 가장 높은 스레드를 선택하도록, 우선순위가 낮은
+   스레드를 작은 원소로 판단하는 비교 함수. */
 static bool
 thread_priority_less(const struct list_elem *a,
 					 const struct list_elem *b,
@@ -45,13 +51,22 @@ thread_priority_less(const struct list_elem *a,
 	return (t_a->priority < t_b->priority);
 }
 
-/* nuri. 우선순위 기부 함수를 별도 구현 */
+/* nuri. lock_acquire()에서 사용할 중첩(연쇄) priority donation을 처리하는 함수.
+   1. current가 다른 스레드가 소유한 lock을 기다리는 경우,
+   current의 priority를 해당 lock 소유자에게 기부하는 역할
+   2. lock의 소유자도 다른 lock을 기다리고 있다면,
+   그 lock의 소유자에게까지 기부를 연쇄적으로 수행한다.
+   3. 각 단계에서 기존 우선순위보다 기부할 우선순위가 높은 경우에만
+   priority를 갱신하며, original_priority는 변경하지 않는다. */
 static void
 donate_priority(struct thread *current) {
+
+	/* current가 기다리는 lock이 없으면 기부할 필요가 없으니 바로 return */	
 	if (current->wait_on_lock == NULL) {
 		return;
 	}
 
+	/* current가 받아야하는 lock을 가진 소유자 */
 	struct thread *holder = current->wait_on_lock->holder;
 
 	while (holder != NULL) {
@@ -59,16 +74,35 @@ donate_priority(struct thread *current) {
 			holder->priority = current->priority;
 		}
 
+		/* holder가 다른 lock을 필요로 하지 않으면 기부 종료 */
 		if (holder->wait_on_lock == NULL) {
 			break;
 		}
 
+		/* 현재 holder가 받으려고 기다리는 lock의 소유자가 없다면 기부 종료 */
 		if (holder->wait_on_lock->holder == NULL) {
 			break;
 		}
 
+		/* 현재 holder가 받으려고 기다리는 lock의 소유자를 다음 priority donation 대상으로 설정 */
 		holder = holder->wait_on_lock->holder;
 	}
+}
+
+/* nuri. cond_signal()에서 사용할 조건 변수 대기 스레드의 우선순위 비교 함수.
+   1. cond->waiter에는 semaphore_elem이 저장되어 있으므로,
+   list_entry()를 통해 각 semaphore_elem의 주소를 얻는다.
+   2. waiter_thread는 대기 중인 스레드를 가리키며, 해당 스레드의 priority를 비교한다.
+   3. s_a의 priority가 s_b보다 낮으면 true를 반환하므로, list_max()는 최종적으로
+   우선순위가 가장 높은 대기자의 list_elem을 반환한다. */
+static bool
+cond_priority_less(const struct list_elem *a,
+				   const struct list_elem *b,
+				   void *aux) {
+	struct semaphore_elem *s_a = list_entry(a, struct semaphore_elem, elem);
+	struct semaphore_elem *s_b = list_entry(b, struct semaphore_elem, elem);
+
+	return (s_a->waiter_thread->priority < s_b->waiter_thread->priority);
 }
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -97,20 +131,27 @@ sema_init (struct semaphore *sema, unsigned value) {
    thread will probably turn interrupts back on. This is
    sema_down function. */
 
-/* 사용 권한을 획득하기 위한 함수.*/
+/* 세마포어의 권한을 하나 획득하는 함수.
+    허가가 없으면 현재 스레드를 BLOCKED 상태로 전환하고, 획득할 수 있을 때까지 대기한다.
+	1. sema->value가 0이면 사용 가능한 자원이 없으므로 현재 스레드를 대기 리스트에 추가하고
+	BLOCKED 상태로 전환한다.
+	2. 다른 스레드가 sema_up()을 호출하여 깨워주면 사용 가능한 자원이 있는지 while문에서 검사
+	3. sema->value가 0보다 크면 1 감소시키고, 현재 스레드가 사용 권한을 획득한다.*/
 void
 sema_down (struct semaphore *sema) {
 	enum intr_level old_level;
 
 	ASSERT (sema != NULL);
 	ASSERT (!intr_context ());
-
 	old_level = intr_disable ();
-	// 하술된 while문은 깨어난 스레드가 실제로 자원을 획득할 수 있는지 다시 확인하는 역할
+
+	/* 사용 가능한 자원이 없으면 sema->waiters에 추가하고 BLOCKED 상태로 전환 */
 	while (sema->value == 0) {
 		list_push_back (&sema->waiters, &thread_current ()->elem);
 		thread_block ();
 	}
+
+	/* 사용 가능한 자원 하나를 획득했음을 의미. */
 	sema->value--;
 	intr_set_level (old_level);
 }
@@ -144,6 +185,7 @@ sema_try_down (struct semaphore *sema) {
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
+
 /* nuri. 사용 권한을 반환하고 다음 스레드가 사용할 수 있게 하는 함수. 
    기존 방식은 FIFO여서 우선순위가 높은 순으로 깨우기 위해 변경
    다만 우선순위 높은 순으로 정렬한 것은 아니고 우선순위 높은 쓰레드를 탐색 후 깨운 것*/
@@ -151,6 +193,7 @@ void
 sema_up (struct semaphore *sema) {
 	enum intr_level old_level;
 	struct thread *max_thread = NULL;
+	/* nuri. thread_check_preemption()함수 적용 전 임시 변수임 */
 	bool should_preempt = false; // CPU를 양보해야 하는지 저장하는 변수
 
 	ASSERT (sema != NULL);
@@ -184,9 +227,8 @@ sema_up (struct semaphore *sema) {
 	   8. B는 이미 실행을 마쳤거나, blocked 상태일 수도 있는데 A의 should_preempt는 True인 상황
 	   Con) A가 불필요하게 thread_yield()호출 가능성 있음 */
 
-	/* nuri. 우선순위가 높은 쓰레드를 깨웠는데, 현재 실행 중인 쓰레드가 우선순위가 낮다면
-	   CPU를 양보할 수 있는 조건문
-	   thread_check_preemption()함수 쓰게될지도 모름 의논해봐야 함*/
+	/* nuri. thread_cheack_preemption()함수 없이 임시적으로 일단 인라인 구현한 조건문.
+	   추후 thread.c에 위 함수가 업데이트 되면 위 함수를 쓰는 방식으로 교체 예정 */
 	if (should_preempt) {
 		if (intr_context()) {
 			intr_yield_on_return();
@@ -387,17 +429,6 @@ struct semaphore_elem {
 										   저장하기 위해 추가한 포인터*/
 };
 
-/* nuri. 조건 변수의 우선도를 비교할 비교함수 구현*/
-static bool
-cond_priority_less(const struct list_elem *a,
-				   const struct list_elem *b,
-				   void *aux) {
-	struct semaphore_elem *s_a = list_entry(a, struct semaphore_elem, elem);
-	struct semaphore_elem *s_b = list_entry(b, struct semaphore_elem, elem);
-
-	return s_a->waiter_thread->priority < s_b->waiter_thread->priority;
-}
-
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
    code to receive the signal and act upon it. */
@@ -430,19 +461,26 @@ cond_init (struct condition *cond) {
    we need to sleep. */
 void
 cond_wait (struct condition *cond, struct lock *lock) {
-	struct semaphore_elem waiter;
+	struct semaphore_elem waiter; // 커널 스택에 waiter라는 지역 변수 생성
 
 	ASSERT (cond != NULL);
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
 
-	sema_init (&waiter.semaphore, 0);
+	sema_init (&waiter.semaphore, 0); // 내부 세마포어 초기화 후 0으로 설정
 	waiter.waiter_thread = thread_current();
-	list_push_back (&cond->waiters, &waiter.elem);
-	lock_release (lock);
-	sema_down (&waiter.semaphore);
-	lock_acquire (lock);
+	list_push_back (&cond->waiters, &waiter.elem); // 조건 변수 대기 리스트에 등록
+	
+	/* Mesa 방식의 조건 변수 대기
+	   cond_signal()로 스레드를 꺠우더라도, 신호를 보낸 스레드에서
+	   대기하던 스레드로 실행 권한과 lock 소유권이 원자적으로 넘어
+	   가지 않는 조건 변수 방식
+	   sema_down()에서 깨어나는 것과 lock_acquire()는 별개 */
+
+	lock_release (lock); // 다른 스레드가 공유 자원에 접근하도록 lock 해제
+	sema_down (&waiter.semaphore); // 신호가 없으면 block 상태로 대기, 신호 받으면 진행
+	lock_acquire (lock); // lock을 다시 획득 후 cond_wait()에서 반환
 }
 
 /* If any threads are waiting on COND (protected by LOCK), then
@@ -452,6 +490,8 @@ cond_wait (struct condition *cond, struct lock *lock) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to signal a condition variable within an
    interrupt handler. */
+
+/* 조건 변수 대기자 중 우선순위가 가장 높은 스레드를 선택하고 꺠우는 함수 */
 void
 cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (cond != NULL);
@@ -462,10 +502,14 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	if (!list_empty (&cond->waiters)) {
 		struct list_elem *max_elem;
 
+		/* 우선순위 가장 높은 스레드 탐색 후 elem의 주소 반환 */
 		max_elem = list_max(&cond->waiters, cond_priority_less, NULL);
 
+		/* cond->waiters 리스트에서 제거 */
 		list_remove(max_elem);
 
+
+		/* max_elem에서 semaphore_elem의 주소 얻고 ready list로 push */
 		struct semaphore_elem *waiter = 
 			list_entry(max_elem, struct semaphore_elem, elem);
 
