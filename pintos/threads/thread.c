@@ -620,6 +620,8 @@ init_thread(struct thread *t, const char *name, int priority)
 	list_init(&t->donations); /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
 	t->wait_on_lock = NULL; /* 처음에는 lock이 없으니 NULL값 */
 
+	t->donation_target = NULL; /* 새로 생성된 스레드는 아직 누구에게도 우선순위를 기부하지 않았으니 NULL로 초기화 */
+
 	t->magic = THREAD_MAGIC;
 }
 

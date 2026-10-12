@@ -106,6 +106,13 @@ struct thread
 										   내가 기부자로 등록될 때 사용하는 멤버*/
 	struct lock *wait_on_lock;			/* 스레드가 획득하려고 기다리는 lock */
 
+	/*nuri. [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다.""
+	  donation_target은 기부 대상을 변경할 때 기존 기부 리스트의 소유자를 찾기 위한 멤버
+	  waiting_elem은 BLOCKED뿐 만 아니라 READY 상태인 LOCK 대기자까지 추적하기 위한 멤버*/
+
+	struct thraed *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
+	struct list_elem waiting_elem; /*  lock의 waiting_threads 리스트에 연결할 노드 */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4; /* Page map level 4 */
