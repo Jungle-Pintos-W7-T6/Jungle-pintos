@@ -74,7 +74,8 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 
-static bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
+/* nuri. synch.c에서도 include해서 사용하기 위해 static 상태 삭제 */
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* Returns true if T appears to point to a valid thread. */
@@ -639,6 +640,8 @@ init_thread(struct thread *t, const char *name, int priority)
 	t->original_priority = priority; /* 기부 받기 전의 본인의 우선순위 */
 	list_init(&t->donations); /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
 	t->wait_on_lock = NULL; /* 처음에는 lock이 없으니 NULL값 */
+
+	t->donation_target = NULL; /* 새로 생성된 스레드는 아직 누구에게도 우선순위를 기부하지 않았으니 NULL로 초기화 */
 
 	t->magic = THREAD_MAGIC;
 }
