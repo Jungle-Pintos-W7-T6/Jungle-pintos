@@ -147,6 +147,7 @@ void thread_sleep(int64_t alarm);
 void thread_awake(int64_t ticks);
 
 void thread_check_preemption(void); // nuri. synch.c 등 다른 파일에서도 preemption 검사를 위해 추가
+void thread_priority_changed(struct thread *t); // YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
 
 int thread_get_priority(void);
 void thread_set_priority(int);
