@@ -384,6 +384,7 @@ void thread_awake(int64_t ticks)
 		thread_unblock(list_entry(cur, struct thread, elem));
 		cur = next;
 	}
+	thread_check_preemption();
 	/* 인터럽트 보호 해제 */
 	intr_set_level(old_level);
 }
@@ -425,20 +426,21 @@ void thread_set_priority(int new_priority)
 
 	/* 기본 우선순위 변경 donation 때문에 일시적으로 바꾸는게 아니라
 	   그냥 이 스레드의 우선순위를 변경하려는 의도 */
-	current->original_priority = new_priority; 
+	current->original_priority = new_priority;
 	current->priority = current->original_priority;
 
 	struct list_elem *e = list_begin(&current->donations);
 
-
 	/* nuri. 자신에게 우선순위를 기부한 스레드를 순회하면서 기부받은 우선순위가
 	   바뀐 우선순위보다 높으면 다시 그 우선순위로 변경. 이 때 바뀐 우선순위는 lock_release()
 	   에서 원래 우선순위로 재변경 */
-	while (e != list_end(&current->donations)) {
-		struct thread *donor = 
+	while (e != list_end(&current->donations))
+	{
+		struct thread *donor =
 			list_entry(e, struct thread, donation_elem);
-		
-		if (current->priority < donor->priority) {
+
+		if (current->priority < donor->priority)
+		{
 			current->priority = donor->priority;
 		}
 
@@ -617,8 +619,8 @@ init_thread(struct thread *t, const char *name, int priority)
 
 	/* nuri. priority donation 관련 멤버 초기화 */
 	t->original_priority = priority; /* 기부 받기 전의 본인의 우선순위 */
-	list_init(&t->donations); /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
-	t->wait_on_lock = NULL; /* 처음에는 lock이 없으니 NULL값 */
+	list_init(&t->donations);		 /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
+	t->wait_on_lock = NULL;			 /* 처음에는 lock이 없으니 NULL값 */
 
 	t->magic = THREAD_MAGIC;
 }
