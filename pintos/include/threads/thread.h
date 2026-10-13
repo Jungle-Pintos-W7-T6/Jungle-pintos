@@ -110,8 +110,10 @@ struct thread
 	  donation_target은 기부 대상을 변경할 때 기존 기부 리스트의 소유자를 찾기 위한 멤버
 	  waiting_elem은 BLOCKED뿐 만 아니라 READY 상태인 LOCK 대기자까지 추적하기 위한 멤버*/
 
-	struct thraed *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
+	struct thread *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
 	struct list_elem waiting_elem; /*  lock의 waiting_threads 리스트에 연결할 노드 */
+
+	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. recent_cpu는 협의 필요 */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

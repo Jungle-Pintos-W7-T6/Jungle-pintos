@@ -418,6 +418,17 @@ priority-fifo는 이런 순서로 진행됨.
 수정한 함수의 내용.
 - 현재 우선순위를 변경한 직후, 기존 thread_check_preemption()으로 양보가 필요한지 검사한다.
 */
+
+/* nuri_MLFQS. thraeed_set_priority의 로직
+   1. 현재 스레드의 original_priority를 변경한다.
+   2. priority를 기본 우선순위로 초기화 한다.
+   3. donations 리스트를 순회한다.
+   4. 기부받은 우선순위 중 최댓값을 적용한다.
+   5. 선점(preemption)이 필요한지 검사한다.
+   MLFQS는 다른 로직을 사용하므로 삭제가 아닌 별도의 로직으로 적용되도록 모드 변경 필요
+   
+   MLFQS의 우선순위 계산 공식:
+   priority = PRI_MAX - (recent_cpu/4) - (2*nice)*/
 void thread_set_priority(int new_priority)
 {
 	struct thread *current = thread_current(); // 현재 running thread 주소를 받음
@@ -554,7 +565,7 @@ void thread_set_nice(int nice UNUSED)
 int thread_get_nice(void)
 {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->nice; // nuri. get_priority와 동일 로직.
 }
 
 /* Returns 100 times the system load average. */
