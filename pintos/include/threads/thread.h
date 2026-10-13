@@ -164,6 +164,7 @@ bool priority_more(const struct list_elem *elem_prev, const struct list_elem *el
 int thread_get_nice(void);
 void thread_set_nice(int UNUSED);
 void thread_update_load_avg(void);
+void thread_update_recent_cpu(void);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 

@@ -555,8 +555,7 @@ void thread_update_load_avg(void)
 
 	/* CPU 경쟁 스레드 수 집계 */
 	ready_threads = 0;
-
-	if (is_thread(thread_current()))
+	if (thread_current() && thread_current() != idle_thread)
 		ready_threads++;
 
 	for (struct list_elem *t = list_head(&ready_list)->next; t != list_end(&ready_list); t = t->next)
@@ -570,13 +569,18 @@ void thread_update_load_avg(void)
 }
 
 /* Returns 100 times the system load average.
+ *
+ * 고정소수점 형태에서 실제 값으로 변환시키고
  * 반올림하여 반환합니다.
  */
 int thread_get_load_avg(void)
 {
-	return 0;
+	return load_avg > 0 ? ((load_avg * F + F / 2) / F) / F : ((load_avg * F - F / 2) / F) / F;
 }
 
+void thread_update_recent_cpu(void)
+{
+}
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
