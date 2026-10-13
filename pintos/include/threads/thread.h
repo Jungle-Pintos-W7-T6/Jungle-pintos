@@ -114,6 +114,7 @@ struct thread
 	struct list_elem waiting_elem;	/*  lock의 waiting_threads 리스트에 연결할 노드 */
 
 	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. recent_cpu는 협의 필요 */
+	int recent_cpu; /*nuri_MLFQS. int로 할지 아닐지 협의 반드시 필요*/
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

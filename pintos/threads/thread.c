@@ -130,6 +130,14 @@ void thread_init(void)
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
 	init_thread(initial_thread, "main", PRI_DEFAULT);
+
+	/* nuri_MLFQS. MLFQS 모드에서는 최초 스레드의 nice와 recent_cpu가 0이므로
+	   우선순위를 PRI_MAX로 초기화 why? 계산식 대입해보면 PRI_MAX가 됨. */
+	if (thread_mlfqs)
+	{
+		initial_thread->priority = PRI_MAX;
+	}
+
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid();
 }
@@ -219,7 +227,9 @@ tid_t thread_create(const char *name, int priority,
 	if (thread_mlfqs == true)
 	{
 		t->nice = thread_current()->nice;
-		//t->recent_cpu = thread_current()->recent_cpu;
+		t->recent_cpu = thread_current()->recent_cpu;
+
+		//mlfqs_update_priority(t);
 	}
 	tid = t->tid = allocate_tid();
 
@@ -576,11 +586,17 @@ void thread_set_nice(int nice) /* nuri_MLFQS. nice 변수 사용하므로 UNUSED
 
 	cur->nice = nice;
 
-	mlfqs_update_priority(cur);
+	if (thread_mlfqs) /* nuri_MLFQS. MLFQS가 비활성화 된 경우엔 이 함수를 실행할 이유가 없음으로 조건문으로 true일 때만 실행 */
+	{
+		mlfqs_update_priority(cur);
+	}
 
 	intr_set_level(old_level); // 원자성 확보
 
-	thread_check_preemption();
+	if (thread_mlfqs)  /* nuri_MLFQS. MLFQS모드에서만 우선순위 재계산하도록 조건문 추가 */
+	{
+		thread_check_preemption();
+	}
 }
 
 /* Returns the current thread's nice value. */
@@ -924,7 +940,7 @@ void mlfqs_update_priority(struct thread *t)
 
 	int new_priority; /* nuri_MLFQS. MLFQS 공식으로 계산한 새로운 priority 값 계산 함수 필요 */
 
-	// new_priority = ; <- 여기에 계산한 값 저장.
+	// new_priority = ; // <- 여기에 계산한 값 저장.
 
 	/* 계산한 값 범위 제한 */
 	if (new_priority < PRI_MIN)
