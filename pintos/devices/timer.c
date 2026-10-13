@@ -138,6 +138,8 @@ timer_interrupt(struct intr_frame *args UNUSED)
 	/* 초당 load_avg 갱신 */
 	if (ticks % TIMER_FREQ == 0)
 		thread_update_load_avg();
+	/* 틱당 recent_cpu 갱신 */
+	thread_update_recent_cpu();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

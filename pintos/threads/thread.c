@@ -539,7 +539,7 @@ int thread_get_nice(void)
 	return 0;
 }
 
-/* 가중치 평균을 업데이트 합니다.
+/* load_avg을 갱신합니다.
  * RUNNING 상태의 스레드 개수 + READY 상태의 스레드 개수를 합하여
  * CPU 경쟁 스레드 수에 포함합니다 (ready_threads)
  *
@@ -570,22 +570,29 @@ void thread_update_load_avg(void)
 
 /* Returns 100 times the system load average.
  *
- * 고정소수점 형태에서 실제 값으로 변환시키고
+ * load_avg를 고정소수점 형태에서 실제 값으로 변환시키고
  * 반올림하여 반환합니다.
  */
 int thread_get_load_avg(void)
 {
-	return load_avg > 0 ? ((load_avg * F + F / 2) / F) / F : ((load_avg * F - F / 2) / F) / F;
+	return load_avg > 0 ? ((load_avg + F / 2) / F) * 100 : ((load_avg - F / 2) / F) * 100;
 }
 
+/* recent_cpu를 갱신합니다.
+ *
+ * 해당 함수는 새 load_avg 갱신 -> 갱신된 load_avg와 nice값을 바탕으로 recent_cpu 갱신
+ * 흐름을 가집니다.
+ */
 void thread_update_recent_cpu(void)
 {
+	long long new_recent_cpu;
+
+	ASSERT(intr_get_level() == INTR_OFF);
 }
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return recent_cpu;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
