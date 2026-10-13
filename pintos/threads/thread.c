@@ -29,7 +29,7 @@
 static struct list ready_list;
 
 /* Sleep에 들어간 스레드의 리스트.
-   해당 리스트 안의 스레드들은 BLOCKED 상태를 가진다.*/
+   해당 리스트 안의 스레드들은 THREAD_BLOCKED 상태를 가진다.*/
 static struct list sleep_list;
 
 /* Idle thread. */
@@ -44,17 +44,14 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
-/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보.
-   인터럽트 안에서는 intr_yield_on_return() 사용. */
-void thread_check_preemption(void);
-
-/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
-void thread_priority_changed(struct thread *t);
-
 /* Statistics. */
 static long long idle_ticks;   /* # of timer ticks spent idle. */
 static long long kernel_ticks; /* # of timer ticks in kernel threads. */
 static long long user_ticks;   /* # of timer ticks in user programs. */
+
+static long long load_avg;	 /* 가중치 평균 */
+static long long recent_cpu; /* 현재 CPU 사용량 */
+#define F (1 << 14)
 
 /* Scheduling. */
 #define TIME_SLICE 4		  /* # of timer ticks to give each thread. */
@@ -74,8 +71,19 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 
+void thread_update_load_avg(void);
+
+/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보.
+   인터럽트 안에서는 intr_yield_on_return() 사용. */
+void thread_check_preemption(void);
+
+/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
+void thread_priority_changed(struct thread *t);
+
 /* nuri. synch.c에서도 include해서 사용하기 위해 static 상태 삭제 */
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
+
+/* 기상 시각 비교를 위한 내부 헬퍼 함수 */
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* Returns true if T appears to point to a valid thread. */
@@ -349,31 +357,23 @@ void thread_awake(int64_t ticks)
 {
 	struct list_elem *cur;
 	struct list_elem *next;
-	struct list_elem *tail;
+	struct list_elem *end;
 	enum intr_level old_level;
 
 	/* sleep_list가 비어있으면 종료 */
 	if (list_empty(&sleep_list))
 		return;
 
-	/* 인터럽트 보호 시작 */
-	old_level = intr_disable();
-
 	cur = list_front(&sleep_list);
-	tail = list_tail(&sleep_list);
+	end = list_tail(&sleep_list);
 	/* 시간이 다 된 스레드를 sleep_list에서 제거 */
-	/* TODO: 기타 우선순위를 고려하여서 READY 큐에 넣어야 하는가?
-	   만약 작업이 필요하다 하면, 내 범위인가?
-	   그렇지 않다면, 팀원의 함수가 필요한가? */
-	while (cur != tail && list_entry(cur, struct thread, elem)->alarm <= ticks)
+	while (cur != end && list_entry(cur, struct thread, elem)->alarm <= ticks)
 	{
 		next = list_remove(cur);
 		thread_unblock(list_entry(cur, struct thread, elem));
 		cur = next;
 	}
 	thread_check_preemption();
-	/* 인터럽트 보호 해제 */
-	intr_set_level(old_level);
 }
 
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED)
@@ -464,7 +464,6 @@ int thread_get_priority(void)
 우선 본문부터 작성하고, 검토 후 호출 위치를 연결.*/
 void thread_check_preemption(void)
 {
-
 	struct thread *t;	  // 준비 큐 맨 앞에서 기다리는 스레드
 	struct thread *t_cur; // 지금 CPU에서 실행 중인 스레드
 
@@ -491,19 +490,13 @@ void thread_check_preemption(void)
 	if (t->priority > t_cur->priority)
 	{
 		if (intr_context() == true)
-		{
 			intr_yield_on_return();
-		}
 		else
-		{
 			thread_yield();
-		}
 	}
 
 	// 이전 상태 복원.
 	intr_set_level(old_level);
-
-	return;
 }
 
 /* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
@@ -546,10 +539,41 @@ int thread_get_nice(void)
 	return 0;
 }
 
-/* Returns 100 times the system load average. */
+/* 가중치 평균을 업데이트 합니다.
+ * RUNNING 상태의 스레드 개수 + READY 상태의 스레드 개수를 합하여
+ * CPU 경쟁 스레드 수에 포함합니다 (ready_threads)
+ *
+ * CPU 경쟁 스레드 수를 평균적인 경쟁 규모(가중치 평균)으로 계산하여
+ * load_avg를 갱신합니다.
+ */
+void thread_update_load_avg(void)
+{
+	long long new_load_avg;
+	long long ready_threads;
+
+	ASSERT(intr_get_level() == INTR_OFF);
+
+	/* CPU 경쟁 스레드 수 집계 */
+	ready_threads = 0;
+
+	if (is_thread(thread_current()))
+		ready_threads++;
+
+	for (struct list_elem *t = list_head(&ready_list)->next; t != list_end(&ready_list); t = t->next)
+		ready_threads++;
+
+	/* 고정소수점과 EWMA를 이용하여 새 가중치 평균 계산 */
+	new_load_avg = load_avg + (ready_threads * F - load_avg) / 60;
+
+	/* 가중치 업데이트 */
+	load_avg = new_load_avg;
+}
+
+/* Returns 100 times the system load average.
+ * 반올림하여 반환합니다.
+ */
 int thread_get_load_avg(void)
 {
-	/* TODO: Your implementation goes here */
 	return 0;
 }
 

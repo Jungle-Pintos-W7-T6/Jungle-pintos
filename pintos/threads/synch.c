@@ -134,6 +134,7 @@ void sema_down(struct semaphore *sema)
 
 	ASSERT(sema != NULL);
 	ASSERT(!intr_context());
+
 	old_level = intr_disable();
 
 	/* 사용 가능한 자원이 없으면 sema->waiters에 추가하고 BLOCKED 상태로 전환 */
@@ -154,8 +155,7 @@ void sema_down(struct semaphore *sema)
 
 			/* 이전에 기부하던 스레드와 현재 lock 소유자가 다르면
 			   이전 소유자의 donations 리스트에서 current를 제거 */
-			if (current->donation_target != NULL &&
-				current->donation_target != holder)
+			if (current->donation_target != NULL && current->donation_target != holder)
 			{
 				list_remove(&current->donation_elem);
 				current->donation_target = NULL;
@@ -330,7 +330,6 @@ void lock_acquire(struct lock *lock)
 	/* 다른 스레드가 LOCK을 소유하고 있다면 */
 	if (holder != NULL)
 	{
-
 		current->wait_on_lock = lock;
 
 		/* nuri. [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다."
