@@ -229,27 +229,11 @@ tid_t thread_create(const char *name, int priority,
 			준비 큐의 최고 우선순위가 현재 스레드보다 높으면 CPU를 양보한다.
 		4. return tid
 			현재 스레드가 다시 실행되면 생성한 스레드의 ID를 반환한다.
-thread_unblock() 앞에 두면 새 스레드가 아직 준비 큐에 없어서 비교 대상에 포함되지 않음.
-따라서 준비 큐에 넣은 직후, 생성 함수가 반환하기 전에 검사.
-예를 들어 현재 우선순위가 31, 새 스레드가 40이면, 새 스레드가 thread_create()의 반환보다 먼저 실행될 수 있음.*/
+		thread_unblock() 앞에 두면 새 스레드가 아직 준비 큐에 없어서 비교 대상에 포함되지 않음.
+		따라서 준비 큐에 넣은 직후, 생성 함수가 반환하기 전에 검사.
+		예를 들어 현재 우선순위가 31, 새 스레드가 40이면, 새 스레드가 thread_create()의 반환보다 먼저 실행될 수 있음. */
 	thread_check_preemption(); // YJ: 더 높은 우선순위 스레드가 준비(생성)됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용.
 
-	/*	1. 새 스레드 초기화
-			우선순위, 실행할 함수, 레지스터 등을 설정해서 실행 가능한 상태로 만든다.
-		2. thread_unblock(t)
-			새 스레드를 준비 큐에 넣고 READY로 바꾼다.
-		3. thread_check_preemption() ← 지금 위치
-			준비 큐의 최고 우선순위가 현재 스레드보다 높으면 CPU를 양보한다.
-		4. return tid
-			현재 스레드가 다시 실행되면 생성한 스레드의 ID를 반환한다.
-thread_unblock() 앞에 두면 새 스레드가 아직 준비 큐에 없어서 비교 대상에 포함되지 않음.
-따라서 준비 큐에 넣은 직후, 생성 함수가 반환하기 전에 검사.
-예를 들어 현재 우선순위가 31, 새 스레드가 40이면, 새 스레드가 thread_create()의 반환보다 먼저 실행될 수 있음.*/
-	thread_check_preemption(); // YJ: 더 높은 우선순위 스레드가 준비(생성)됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용.
-
-	// if (t->priority > thread_current()->priority) {
-	// 	thread_yield();
-	// }
 	return tid;
 }
 
@@ -284,9 +268,11 @@ void thread_unblock(struct thread *t)
 
 	old_level = intr_disable();
 	ASSERT(t->status == THREAD_BLOCKED);
-	// list_push_back(&ready_list, &t->elem);			// YJ TODO: 무조건 뒤에 넣는 방식을 우선순위에 맞는 위치에 넣는 방식으로 변경
-	list_insert_ordered(&ready_list, &t->elem, priority_more, NULL); // 이유: BLOCKED에서 깨어난 스레드가 준비 큐에 합류하는 입구. 기존의 인터럽트 끄기 → 삽입 → READY 표시 → 이전 인터럽트 상태 복원 순서는 유지.
+
+	/* priority를 고려하여 READY Queue에 삽입 */
+	list_insert_ordered(&ready_list, &t->elem, priority_more, NULL);
 	t->status = THREAD_READY;
+
 	intr_set_level(old_level);
 }
 
@@ -349,10 +335,11 @@ void thread_yield(void)
 	ASSERT(!intr_context());
 
 	old_level = intr_disable();
+
 	if (curr != idle_thread)
-		//	list_push_back(&ready_list, &curr->elem);							// YJ TODO: CPU를 양보한 현재 스레드도 동일한 기준으로 다시 삽입
-		list_insert_ordered(&ready_list, &curr->elem, priority_more, NULL); // 이유: 양보한 스레드는 여전히 실행 가능하므로 준비 큐에 돌아가야. 유휴 스레드 제외 조건과 삽입 → READY 전환·스케줄링 → 인터럽트 복원 흐름은 유지.
+		list_insert_ordered(&ready_list, &curr->elem, priority_more, NULL);
 	do_schedule(THREAD_READY);
+
 	intr_set_level(old_level);
 }
 
@@ -384,6 +371,7 @@ void thread_awake(int64_t ticks)
 		thread_unblock(list_entry(cur, struct thread, elem));
 		cur = next;
 	}
+	thread_check_preemption();
 	/* 인터럽트 보호 해제 */
 	intr_set_level(old_level);
 }
@@ -436,20 +424,21 @@ void thread_set_priority(int new_priority)
 
 	/* 기본 우선순위 변경 donation 때문에 일시적으로 바꾸는게 아니라
 	   그냥 이 스레드의 우선순위를 변경하려는 의도 */
-	current->original_priority = new_priority; 
+	current->original_priority = new_priority;
 	current->priority = current->original_priority;
 
 	struct list_elem *e = list_begin(&current->donations);
 
-
 	/* nuri. 자신에게 우선순위를 기부한 스레드를 순회하면서 기부받은 우선순위가
 	   바뀐 우선순위보다 높으면 다시 그 우선순위로 변경. 이 때 바뀐 우선순위는 lock_release()
 	   에서 원래 우선순위로 재변경 */
-	while (e != list_end(&current->donations)) {
-		struct thread *donor = 
+	while (e != list_end(&current->donations))
+	{
+		struct thread *donor =
 			list_entry(e, struct thread, donation_elem);
-		
-		if (current->priority < donor->priority) {
+
+		if (current->priority < donor->priority)
+		{
 			current->priority = donor->priority;
 		}
 
@@ -528,7 +517,7 @@ void thread_check_preemption(void)
 	return;
 }
 
-/* YJ TODO: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
+/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
 함수의 입력과 책임
 - 입력 t: 우선순위가 이미 변경된 스레드의 주소.
 - t->priority: C가 변경해 둔 새 값.
@@ -541,18 +530,18 @@ void thread_check_preemption(void)
 3. READY라면 t->elem을 기존 준비 큐 위치에서 제거한다.
 4. 같은 요소를 기존 비교 함수로 우선순위에 맞게 재삽입한다.
 5. 이전 인터럽트 상태를 복원한다. */
-void thread_priority_changed(struct thread *t){
+void thread_priority_changed(struct thread *t)
+{
 	enum intr_level old_level = intr_disable();
 
-	if (t->status == THREAD_READY){
-		list_remove(&(t->elem)); // 아 몰루겠어
+	if (t->status == THREAD_READY)
+	{
+		list_remove(&(t->elem));
+		/* 우선순위에 맞게 READY Queue에 재삽입. */
 		list_insert_ordered(&ready_list, &(t->elem), priority_more, NULL);
 	}
-	
-	// 이전 상태 복원.
-	intr_set_level(old_level);
 
-	return ;
+	intr_set_level(old_level);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -649,8 +638,8 @@ init_thread(struct thread *t, const char *name, int priority)
 
 	/* nuri. priority donation 관련 멤버 초기화 */
 	t->original_priority = priority; /* 기부 받기 전의 본인의 우선순위 */
-	list_init(&t->donations); /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
-	t->wait_on_lock = NULL; /* 처음에는 lock이 없으니 NULL값 */
+	list_init(&t->donations);		 /* 자신에게 우선순위를 기부하는 스레드들을 리스트 초기화 */
+	t->wait_on_lock = NULL;			 /* 처음에는 lock이 없으니 NULL값 */
 
 	t->donation_target = NULL; /* 새로 생성된 스레드는 아직 누구에게도 우선순위를 기부하지 않았으니 NULL로 초기화 */
 
