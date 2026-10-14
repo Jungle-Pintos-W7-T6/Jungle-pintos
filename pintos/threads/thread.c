@@ -32,6 +32,8 @@ static struct list ready_list;
    해당 리스트 안의 스레드들은 BLOCKED 상태를 가진다.*/
 static struct list sleep_list;
 
+static struct list all_list;						/* YJ: 팀원이 세 스레드의 계산값을 모두 갱신하려면 세 스레드를 찾을 수 있는 명단이 필요.*/
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -44,12 +46,15 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
-/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보.
-   인터럽트 안에서는 intr_yield_on_return() 사용. */
-void thread_check_preemption(void);
+void thread_check_preemption(void);					/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용. */
 
-/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
-void thread_priority_changed(struct thread *t);
+void thread_priority_changed(struct thread *t);		/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
+
+bool thread_is_idle(const struct thread *t);		/* YJ: 전달받은 스레드가 idle인지 판별 */
+
+size_t thread_ready_count(void); 					/* YJ: READY + RUNNING 수. idle 제외 */
+
+void thread_reorder_ready_queue(void);				/* YJ: 일괄 변경된 우선순위로 준비 큐 재정렬. 같은 우선순위 순서 유지 */
 
 /* Statistics. */
 static long long idle_ticks;   /* # of timer ticks spent idle. */
@@ -123,11 +128,15 @@ void thread_init(void)
 	list_init(&sleep_list);
 	list_init(&destruction_req);
 
+	list_init(&all_list);			/* YJ: 팀원이 세 스레드의 계산값을 모두 갱신하려면 세 스레드를 찾을 수 있는 명단이 필요.*/
+
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
 	init_thread(initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid();
+
+	list_push_back(&all_list, &initial_thread->all_elem);		// YJ: 초기 스레드를 전체 목록에 등록
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -194,6 +203,7 @@ tid_t thread_create(const char *name, int priority,
 {
 	struct thread *t;
 	tid_t tid;
+	enum intr_level old_level;
 
 	ASSERT(function != NULL);
 
@@ -216,6 +226,12 @@ tid_t thread_create(const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+
+	/* 인터럽트 보호 시작 */
+	old_level = intr_disable();
+	list_push_back(&all_list, &t->all_elem);		// YJ: 생성될 때마다 명단에 넣기. 이를 thread_unblock() 전에 하려는 이유는, 스케줄링으로 실행되기 전에 명단 등록을 마치기 위해서.
+	/* 인터럽트 보호 해제 */
+	intr_set_level(old_level);
 
 	/* Add to run queue. */
 	thread_unblock(t);
@@ -326,6 +342,7 @@ tid_t thread_tid(void)
 void thread_exit(void)
 {
 	ASSERT(!intr_context());
+	enum intr_level old_level;
 
 #ifdef USERPROG
 	process_exit();
@@ -334,6 +351,9 @@ void thread_exit(void)
 	/* Just set our status to dying and schedule another process.
 	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable();
+
+	list_remove(&thread_current()->all_elem);							// YJ: 종료 스레드를 전체 목록에서 제거. 스레드가 끝났는데 명단에 남아 있으면 A·C가 종료된 스레드까지 갱신하려고 하기 때문에.
+
 	do_schedule(THREAD_DYING);
 	NOT_REACHED();
 }
@@ -542,6 +562,78 @@ void thread_priority_changed(struct thread *t){
 
 	return ;
 }
+
+/* YJ TODO: 전달받은 스레드가 idle인지 판별
+1. 반환형을 참·거짓을 반환할 수 있는 타입으로 만들기.
+2. 판별할 스레드 주소를 인자로 받기.
+3. 전달받은 주소와 기존 idle_thread 주소의 비교 결과를 반환하기.****
+4. thread.h에도 같은 선언 추가하기.
++ 너무 간단한 로직이라 매크로로 만들까 했지만 idle_thread가 thread.c 내부의 static 변수라서 어차피 다른 파일에서는 접근할 수 없음. */
+bool thread_is_idle(const struct thread *t)
+{
+	return idle_thread == t;
+}
+
+/* YJ TODO: READY + RUNNING 수. idle 제외
+1. 이전 인터럽트 상태를 저장하고 끈다.
+2. 준비 큐의 요소 수를 변수에 저장한다.
+3. 현재 스레드가 idle이 아니면 개수를 1 증가시킨다.
+4. 이전 인터럽트 상태를 복원한다.
+5. 개수를 반환한다. 
++ 처음에는 int로 반환하려고 했는데 반환하는 변수가 size_t이네요. 어차피 signed는 안 쓰니까 size_t로 반환하겠습니다. */
+size_t thread_ready_count(void)
+{
+	enum intr_level old_level = intr_disable();				// 이전 인터럽트 상태를 저장하고 끈다.
+	size_t ready_list_size = list_size(&ready_list);		// 준비 큐의 요소 수를 변수에 저장한다.
+
+	if (!thread_is_idle(thread_current()))					// 현재 스레드가 idle이 아니면 개수를 1 증가시킨다.
+	{
+		ready_list_size++;
+	}
+		
+	intr_set_level(old_level);								// 이전 인터럽트 상태를 복원한다.
+
+	return ready_list_size;									// 개수를 반환한다.
+}
+
+/* YJ TODO: RUNNING·READY·BLOCKED 순회. 종료한 스레드 제외
+작업 함수는 순회 중 양보하거나 목록에 스레드를 추가/제거하지 않는 제약으로 사용할 것! idle도 목록에 포함하고, 누&진스는 thread_is_idle()로 제외하면 됨.
+1. 호출자가 인터럽트를 껐는지 확인.
+2. 전체 목록의 첫 요소부터 끝 센티널 전까지 이동.
+3. 현재 요소를 struct thread로 변환. 사용할 멤버는 all_elem.
+4. 전달받은 작업 함수를 그 스레드와 aux를 인자로 호출. 
+foreach함수 제약 사항:
+- 스레드를 생성·종료해서 all_list에 요소를 추가·제거하지 않는다. 순회 자체가 목록이 유지된다고 가정하고 e의 다음  요소로 이동함.
+- CPU를 양보하거나 BLOCKED 상태로 기다리지 않는다. 다른 스레드가 실행되면서 목록이 바뀔 수 있기 때문.
+- 대신 전달받은 스레드의 recent_cpu, priority 같은 값을 갱신한다. */
+void thread_foreach(thread_action_func *func, void *aux)
+{
+	ASSERT(intr_get_level() == INTR_OFF);
+	ASSERT(func != NULL);
+
+	struct list_elem *e;
+
+	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
+	{
+		struct thread *t = list_entry(e, struct thread, all_elem);
+		func(t, aux);
+	}
+}
+
+/* YJ TODO: 일괄 변경된 우선순위로 준비 큐 재정렬. 같은 우선순위 순서 유지
+1. 이전 인터럽트 상태를 저장하며 끈다.
+2. 준비 큐 전체를 기존 비교 기준으로 정렬한다.
+3. 이전 인터럽트 상태를 복원한다.
+4. 함수 선언은 반환값 없음, 인자 없음으로 하고 헤더에도 추가한다. */
+void thread_reorder_ready_queue(void)
+{
+	enum intr_level old_level = intr_disable();
+
+	list_sort(&ready_list, priority_more, NULL);
+
+	intr_set_level(old_level);
+}
+
 
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice UNUSED)

@@ -106,6 +106,8 @@ struct thread
 										   내가 기부자로 등록될 때 사용하는 멤버*/
 	struct lock *wait_on_lock;			/* 스레드가 획득하려고 기다리는 lock */
 
+	struct list_elem all_elem;			/* YJ: 각 스레드를 명단에 연결할 요소. 스레드를 복사하거나 새로 생성하는 작업은 없음. 기존 스레드에 연결 요소 하나를 추가하는 것. */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4; /* Page map level 4 */
@@ -119,6 +121,15 @@ struct thread
 	struct intr_frame tf; /* 문맥 교환 정보 */
 	unsigned magic;		  /* 오버플로우 감지 */
 };
+
+/* YJ: 작업 함수는 순회 중 양보하거나 목록에 스레드를 추가/제거하지 않는 제약으로 사용할 것! idle도 목록에 포함하고, 누&진스는 thread_is_idle()로 제외하면 됨.
+전체 목록은 우선순위로 정렬할 필요가 없음. 모든 스레드를 빠짐없이 순회하는 목적이므로 등록할 때 뒤에 넣으면 됨. */
+typedef void thread_action_func(struct thread *t, void *aux);
+void thread_foreach(thread_action_func *func, void *aux);
+
+bool thread_is_idle(const struct thread *t);			// YJ
+size_t thread_ready_count(void);						// YJ
+void thread_reorder_ready_queue(void);					// YJ
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
