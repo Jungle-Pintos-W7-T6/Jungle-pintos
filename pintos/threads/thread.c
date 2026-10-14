@@ -236,8 +236,16 @@ tid_t thread_create(const char *name, int priority,
 	   처리하지 않고 여러 작업을 나누어 수행하기 위해서. 그러기 위한 thread_create() 함수 */
 	if (thread_mlfqs == true)
 	{
-		t->nice = thread_current()->nice;
-		t->recent_cpu = thread_current()->recent_cpu;
+		if (function != idle)				// YJ: 일반 스레드인지 확인
+		{
+			/* 인터럽트 보호 시작 */
+			old_level = intr_disable();
+			t->nice = thread_current()->nice;				// YJ: idled이면 상속/계산 건너뛰기
+			t->recent_cpu = thread_current()->recent_cpu;
+			mlfqs_update_priority(t);						// YJ: 우선순위 재계산
+			/* 인터럽트 보호 해제 */
+			intr_set_level(old_level);
+		}
 
 		//mlfqs_update_priority(t);
 	}
@@ -668,6 +676,20 @@ void thread_reorder_ready_queue(void)
 	intr_set_level(old_level);
 }
 
+/* YJ TODO: 
+  • 반환형: void
+  • 첫 번째 인자: struct thread *t
+  • 두 번째 인자: void *aux — 사용하지 않으므로 기존 UNUSED 활용.
+  • 본문: 전달받은 t를 C의 mlfqs_update_priority()에 전달한다.
+  • 계산식, 준비 큐 정렬, 선점 검사는 넣지 않는다.
+  • thread.c 내부용이므로 static으로 선언하고, 위쪽에 전방 선언을 추가한다. 헤더에는 추가하지 않는다.
+*/
+void mlfqs_priority_action(struct thread *t, void *aux UNUSED){
+	
+}
+
+/* YJ TODO: 일괄 
+*/
 
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice) /* nuri_MLFQS. nice 변수 사용하므로 UNUSED 제거 */
