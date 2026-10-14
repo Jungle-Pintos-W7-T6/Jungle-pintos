@@ -117,7 +117,7 @@ struct thread
 
 	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. */
 
-	struct list_elem all_elem;			/* YJ: 각 스레드를 명단에 연결할 요소. 스레드를 복사하거나 새로 생성하는 작업은 없음. 기존 스레드에 연결 요소 하나를 추가하는 것. */
+	struct list_elem all_elem; /* YJ: 각 스레드를 명단에 연결할 요소. 스레드를 복사하거나 새로 생성하는 작업은 없음. 기존 스레드에 연결 요소 하나를 추가하는 것. */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -138,9 +138,9 @@ struct thread
 typedef void thread_action_func(struct thread *t, void *aux);
 void thread_foreach(thread_action_func *func, void *aux);
 
-bool thread_is_idle(const struct thread *t);			// YJ
-size_t thread_ready_count(void);						// YJ
-void thread_reorder_ready_queue(void);					// YJ
+bool thread_is_idle(const struct thread *t); // YJ
+size_t thread_ready_count(void);			 // YJ
+void thread_reorder_ready_queue(void);		 // YJ
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

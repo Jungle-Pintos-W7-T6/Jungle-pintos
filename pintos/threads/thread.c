@@ -10,6 +10,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #include "intrinsic.h"
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -32,7 +33,7 @@ static struct list ready_list;
    해당 리스트 안의 스레드들은 THREAD_BLOCKED 상태를 가진다.*/
 static struct list sleep_list;
 
-static struct list all_list;						/* YJ: 팀원이 세 스레드의 계산값을 모두 갱신하려면 세 스레드를 찾을 수 있는 명단이 필요.*/
+static struct list all_list; /* YJ: 팀원이 세 스레드의 계산값을 모두 갱신하려면 세 스레드를 찾을 수 있는 명단이 필요.*/
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -46,15 +47,15 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
-void thread_check_preemption(void);					/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용. */
+void thread_check_preemption(void); /* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용. */
 
-void thread_priority_changed(struct thread *t);		/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
+void thread_priority_changed(struct thread *t); /* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
 
-bool thread_is_idle(const struct thread *t);		/* YJ: 전달받은 스레드가 idle인지 판별 */
+bool thread_is_idle(const struct thread *t); /* YJ: 전달받은 스레드가 idle인지 판별 */
 
-size_t thread_ready_count(void); 					/* YJ: READY + RUNNING 수. idle 제외 */
+size_t thread_ready_count(void); /* YJ: READY + RUNNING 수. idle 제외 */
 
-void thread_reorder_ready_queue(void);				/* YJ: 일괄 변경된 우선순위로 준비 큐 재정렬. 같은 우선순위 순서 유지 */
+void thread_reorder_ready_queue(void); /* YJ: 일괄 변경된 우선순위로 준비 큐 재정렬. 같은 우선순위 순서 유지 */
 
 /* Statistics. */
 static long long idle_ticks;   /* # of timer ticks spent idle. */
@@ -62,8 +63,6 @@ static long long kernel_ticks; /* # of timer ticks in kernel threads. */
 static long long user_ticks;   /* # of timer ticks in user programs. */
 
 static long long load_avg; /* 가중치 평균 */
-
-#define F (1 << 14)
 
 /* Scheduling. */
 #define TIME_SLICE 4		  /* # of timer ticks to give each thread. */
@@ -82,6 +81,7 @@ static void init_thread(struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
+static void compute_recent_cpu(struct thread *t, void *aux UNUSED);
 
 void thread_update_load_avg(void);
 
@@ -147,7 +147,7 @@ void thread_init(void)
 	list_init(&sleep_list);
 	list_init(&destruction_req);
 
-	list_init(&all_list);			/* YJ: 팀원이 세 스레드의 계산값을 모두 갱신하려면 세 스레드를 찾을 수 있는 명단이 필요.*/
+	list_init(&all_list); /* YJ: 팀원이 세 스레드의 계산값을 모두 갱신하려면 세 스레드를 찾을 수 있는 명단이 필요.*/
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
@@ -163,7 +163,7 @@ void thread_init(void)
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid();
 
-	list_push_back(&all_list, &initial_thread->all_elem);		// YJ: 초기 스레드를 전체 목록에 등록
+	list_push_back(&all_list, &initial_thread->all_elem); // YJ: 초기 스레드를 전체 목록에 등록
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -271,7 +271,7 @@ tid_t thread_create(const char *name, int priority,
 
 	/* 인터럽트 보호 시작 */
 	old_level = intr_disable();
-	list_push_back(&all_list, &t->all_elem);		// YJ: 생성될 때마다 명단에 넣기. 이를 thread_unblock() 전에 하려는 이유는, 스케줄링으로 실행되기 전에 명단 등록을 마치기 위해서.
+	list_push_back(&all_list, &t->all_elem); // YJ: 생성될 때마다 명단에 넣기. 이를 thread_unblock() 전에 하려는 이유는, 스케줄링으로 실행되기 전에 명단 등록을 마치기 위해서.
 	/* 인터럽트 보호 해제 */
 	intr_set_level(old_level);
 
@@ -380,7 +380,7 @@ void thread_exit(void)
 	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable();
 
-	list_remove(&thread_current()->all_elem);							// YJ: 종료 스레드를 전체 목록에서 제거. 스레드가 끝났는데 명단에 남아 있으면 A·C가 종료된 스레드까지 갱신하려고 하기 때문에.
+	list_remove(&thread_current()->all_elem); // YJ: 종료 스레드를 전체 목록에서 제거. 스레드가 끝났는데 명단에 남아 있으면 A·C가 종료된 스레드까지 갱신하려고 하기 때문에.
 
 	do_schedule(THREAD_DYING);
 	NOT_REACHED();
@@ -474,7 +474,8 @@ void thread_awake(int64_t ticks)
 	struct list_elem *cur;
 	struct list_elem *next;
 	struct list_elem *end;
-	enum intr_level old_level;
+
+	ASSERT(intr_get_level() == INTR_OFF);
 
 	/* sleep_list가 비어있으면 종료 */
 	if (list_empty(&sleep_list))
@@ -482,13 +483,14 @@ void thread_awake(int64_t ticks)
 
 	cur = list_front(&sleep_list);
 	end = list_tail(&sleep_list);
-	/* 시간이 다 된 스레드를 sleep_list에서 제거 */
+	/* 시간이 다 된 스레드를 sleep_list에서 제거 후, READY Queue로 삽입 */
 	while (cur != end && list_entry(cur, struct thread, elem)->alarm <= ticks)
 	{
 		next = list_remove(cur);
 		thread_unblock(list_entry(cur, struct thread, elem));
 		cur = next;
 	}
+
 	thread_check_preemption();
 }
 
@@ -676,21 +678,21 @@ bool thread_is_idle(const struct thread *t)
 2. 준비 큐의 요소 수를 변수에 저장한다.
 3. 현재 스레드가 idle이 아니면 개수를 1 증가시킨다.
 4. 이전 인터럽트 상태를 복원한다.
-5. 개수를 반환한다. 
+5. 개수를 반환한다.
 + 처음에는 int로 반환하려고 했는데 반환하는 변수가 size_t이네요. 어차피 signed는 안 쓰니까 size_t로 반환하겠습니다. */
 size_t thread_ready_count(void)
 {
-	enum intr_level old_level = intr_disable();				// 이전 인터럽트 상태를 저장하고 끈다.
-	size_t ready_list_size = list_size(&ready_list);		// 준비 큐의 요소 수를 변수에 저장한다.
+	enum intr_level old_level = intr_disable();		 // 이전 인터럽트 상태를 저장하고 끈다.
+	size_t ready_list_size = list_size(&ready_list); // 준비 큐의 요소 수를 변수에 저장한다.
 
-	if (!thread_is_idle(thread_current()))					// 현재 스레드가 idle이 아니면 개수를 1 증가시킨다.
+	if (!thread_is_idle(thread_current())) // 현재 스레드가 idle이 아니면 개수를 1 증가시킨다.
 	{
 		ready_list_size++;
 	}
-		
-	intr_set_level(old_level);								// 이전 인터럽트 상태를 복원한다.
 
-	return ready_list_size;									// 개수를 반환한다.
+	intr_set_level(old_level); // 이전 인터럽트 상태를 복원한다.
+
+	return ready_list_size; // 개수를 반환한다.
 }
 
 /* YJ TODO: RUNNING·READY·BLOCKED 순회. 종료한 스레드 제외
@@ -698,7 +700,7 @@ size_t thread_ready_count(void)
 1. 호출자가 인터럽트를 껐는지 확인.
 2. 전체 목록의 첫 요소부터 끝 센티널 전까지 이동.
 3. 현재 요소를 struct thread로 변환. 사용할 멤버는 all_elem.
-4. 전달받은 작업 함수를 그 스레드와 aux를 인자로 호출. 
+4. 전달받은 작업 함수를 그 스레드와 aux를 인자로 호출.
 foreach함수 제약 사항:
 - 스레드를 생성·종료해서 all_list에 요소를 추가·제거하지 않는다. 순회 자체가 목록이 유지된다고 가정하고 e의 다음  요소로 이동함.
 - CPU를 양보하거나 BLOCKED 상태로 기다리지 않는다. 다른 스레드가 실행되면서 목록이 바뀔 수 있기 때문.
@@ -730,7 +732,6 @@ void thread_reorder_ready_queue(void)
 
 	intr_set_level(old_level);
 }
-
 
 /* 현재 스레드의 nice을 설정합니다. */
 void thread_set_nice(int nice)
@@ -768,20 +769,15 @@ int thread_get_nice(void)
 void thread_update_load_avg(void)
 {
 	long long new_load_avg;
-	long long ready_threads;
+	long long count;
 
 	ASSERT(intr_get_level() == INTR_OFF);
 
 	/* CPU 경쟁 스레드 수 집계 */
-	ready_threads = 0;
-	if (thread_current() && thread_current() != idle_thread)
-		ready_threads++;
-
-	for (struct list_elem *t = list_head(&ready_list)->next; t != list_end(&ready_list); t = t->next)
-		ready_threads++;
+	count = thread_ready_count();
 
 	/* 고정소수점과 EWMA를 이용하여 새 가중치 평균 계산 */
-	new_load_avg = load_avg + (ready_threads * F - load_avg) / 60;
+	new_load_avg = load_avg + (REAL_TO_FIXED(count) - load_avg) / 60;
 
 	/* 가중치 업데이트 */
 	load_avg = new_load_avg;
@@ -790,7 +786,13 @@ void thread_update_load_avg(void)
 /* load_avg * 100 값을 반환합니다. */
 int thread_get_load_avg(void)
 {
-	return load_avg > 0 ? ((load_avg * 100 + F / 2) / F) : ((load_avg * 100 - F / 2) / F);
+	long long snap_load_avg;
+
+	/* 비교문 실행 시, 두 시점의 값이 섞여 계산될 가능성이 있어 snapshot으로 계산 */
+	snap_load_avg = load_avg;
+
+	/* load_avg * 100을 반올림하여 반환 */
+	return FIXED_TO_REAL_ROUND(snap_load_avg * 100);
 }
 
 /* recent_cpu를 갱신합니다.
@@ -802,18 +804,29 @@ void thread_update_recent_cpu(void)
 {
 	ASSERT(intr_get_level() == INTR_OFF);
 
-	/* RUNNING 상태 스레드 recent_cpu 갱신 */
-	// (((2 * load_avg * F) / (2 * load_avg + 1)) / F) * thread_get_recent_cpu() + thread_get_nice();
+	/* IDLE 상태 스레드를 제외한 모든 스레드들의 recent_cpu 갱신 */
+	thread_foreach(compute_recent_cpu, NULL);
+}
 
-	/* READY 상태 스레드 recent_cpu 갱신 */
-
-	/* BLOCKED 상태 스레드 recent_cpu 갱신 */
+/* 인자로 받은 스레드의 recent_cpu 값을 계산합니다.*/
+static void compute_recent_cpu(struct thread *t, void *aux UNUSED)
+{
+	/* IDLE 상태 스레드 제외 */
+	if (thread_is_idle(t))
+		return;
+	/* TODO: recent_cpu 수식 계산 */
 }
 
 /* recent_cpu * 100 값을 반환합니다. */
 int thread_get_recent_cpu(void)
 {
-	return thread_current()->recent_cpu > 0 ? ((thread_current()->recent_cpu * 100 + F / 2) / F) : ((thread_current()->recent_cpu * 100 - F / 2) / F);
+	long long snap_recent_cpu;
+
+	/* 비교문 실행 시, 두 시점의 값이 섞여 계산될 가능성이 있어 snapshot으로 계산 */
+	snap_recent_cpu = thread_current()->recent_cpu;
+
+	/* recent_cpu * 100을 반올림하여 반환 */
+	return FIXED_TO_REAL_ROUND(snap_recent_cpu * 100);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
