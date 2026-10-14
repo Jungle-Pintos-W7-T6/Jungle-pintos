@@ -521,9 +521,7 @@ void thread_set_priority(int new_priority)
 	/* nuri_MLFQS. thread_mlfqs가 true일 때는 MLFQS 방식으로 priority를 계산하므로
 	   set_priority로 값이 바뀌는 것을 방지해야 함. */
 	if (thread_mlfqs == true)
-	{
 		return;
-	}
 
 	struct thread *current = thread_current(); // 현재 running thread 주소를 받음
 	enum intr_level old_level = intr_disable();
@@ -531,25 +529,7 @@ void thread_set_priority(int new_priority)
 	/* 기본 우선순위 변경 donation 때문에 일시적으로 바꾸는게 아니라
 	   그냥 이 스레드의 우선순위를 변경하려는 의도 */
 	current->original_priority = new_priority;
-	current->priority = current->original_priority;
-
-	struct list_elem *e = list_begin(&current->donations);
-
-	/* nuri. 자신에게 우선순위를 기부한 스레드를 순회하면서 기부받은 우선순위가
-	   바뀐 우선순위보다 높으면 다시 그 우선순위로 변경. 이 때 바뀐 우선순위는 lock_release()
-	   에서 원래 우선순위로 재변경 */
-	while (e != list_end(&current->donations))
-	{
-		struct thread *donor =
-			list_entry(e, struct thread, donation_elem);
-
-		if (current->priority < donor->priority)
-		{
-			current->priority = donor->priority;
-		}
-
-		e = list_next(e);
-	}
+	thread_update_effective_priority(current);
 	intr_set_level(old_level);
 	thread_check_preemption();
 }
@@ -641,6 +621,23 @@ void thread_priority_changed(struct thread *t)
 	}
 
 	intr_set_level(old_level);
+}
+
+/* 기본 우선순위와 활성 기부자의 우선순위 중 최댓값을 반영한다. */
+void thread_update_effective_priority(struct thread *t)
+{
+	struct list_elem *e;
+
+	ASSERT(intr_get_level() == INTR_OFF);
+
+	t->priority = t->original_priority;
+	for (e = list_begin(&t->donations); e != list_end(&t->donations); e = list_next(e))
+	{
+		struct thread *donor = list_entry(e, struct thread, donation_elem);
+
+		if (donor->priority > t->priority)
+			t->priority = donor->priority;
+	}
 }
 
 /* YJ TODO: 전달받은 스레드가 idle인지 판별

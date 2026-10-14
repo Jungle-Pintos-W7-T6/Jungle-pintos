@@ -169,6 +169,9 @@ void thread_sleep(int64_t alarm);
 void thread_awake(int64_t ticks);
 
 void thread_check_preemption(void);
+/* 인터럽트 OFF에서 계산·저장만 수행하며 READY 재배치나 선점은 하지 않는다. */
+void thread_update_effective_priority(struct thread *t);
+
 void thread_priority_changed(struct thread *t);
 
 int thread_get_priority(void);
