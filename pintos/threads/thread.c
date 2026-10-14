@@ -74,6 +74,7 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 static void compute_recent_cpu(struct thread *t, void *aux);
+void compute_mlfqs_priority(struct thread *t, void *aux UNUSED);
 
 /* nuri. synch.c에서도 include해서 사용하기 위해 static 상태 삭제 */
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
@@ -230,13 +231,14 @@ tid_t thread_create(const char *name, int priority,
 	   기존 priority scheduling에서도 이 관계는 있었으나, 우선순위를 결정하는 방식이
 	   priority 인자를 받는 방식이어서 상속을 고려할 필요가 없었던 것. Pintos에서는
 	   스레드가 다른 스레드를 생성할 수 있는데, 하나의 스레드가 모든 작업을 순차적으로
-	   처리하지 않고 여러 작업을 나누어 수행하기 위해서. 그러기 위한 thread_create() 함수 */
-	if (thread_mlfqs == true)
+	   처리하지 않고 여러 작업을 나누어 수행하기 위해서. 그러기 위한 thread_create() 함수
+	   MLFQS 모드가 활성화 되어 있고, idle 스레드가 아닐 때 실행할 조건 */
+	if (thread_mlfqs == true && function != idle)
 	{
 		t->nice = thread_current()->nice;
-		t->recent_cpu = thread_current()->recent_cpu;
+		t->recent_cpu = thread_current()->recent_cpu; // nuri. Pintos MLFQS 명세에 상속하도록 규정
 
-		// mlfqs_update_priority(t);
+		mlfqs_update_priority(t);
 	}
 	tid = t->tid = allocate_tid();
 
@@ -352,6 +354,7 @@ tid_t thread_tid(void)
 void thread_exit(void)
 {
 	ASSERT(!intr_context());
+	enum intr_level old_level;
 
 #ifdef USERPROG
 	process_exit();
@@ -432,8 +435,15 @@ void mlfqs_update_priority(struct thread *t)
 	}
 
 	int new_priority; /* nuri_MLFQS. MLFQS 공식으로 계산한 새로운 priority 값 계산 함수 필요 */
-
-	// new_priority = ; // <- 여기에 계산한 값 저장.
+	
+	/* MLFQS의 우선순위 계산 공식:
+	priority = PRI_MAX - (recent_cpu/4) - (2*nice) */
+	new_priority = FIXED_TO_REAL_DOWN(
+						FIXED_SUB(
+							FIXED_SUB(
+				   				REAL_TO_FIXED(PRI_MAX),
+				   					FIXED_DIV(t->recent_cpu, REAL_TO_FIXED(4))),
+								REAL_TO_FIXED(2 * t->nice)));
 
 	/* 계산한 값 범위 제한 */
 	if (new_priority < PRI_MIN)
@@ -512,10 +522,7 @@ priority-fifo는 이런 순서로 진행됨.
    3. donations 리스트를 순회한다.
    4. 기부받은 우선순위 중 최댓값을 적용한다.
    5. 선점(preemption)이 필요한지 검사한다.
-   MLFQS는 다른 로직을 사용하므로 삭제가 아닌 별도의 로직으로 적용되도록 조건 검사 필요
-
-   MLFQS의 우선순위 계산 공식:
-   priority = PRI_MAX - (recent_cpu/4) - (2*nice)*/
+   MLFQS는 다른 로직을 사용하므로 삭제가 아닌 별도의 로직으로 적용되도록 조건 검사 필요 */
 void thread_set_priority(int new_priority)
 {
 	/* nuri_MLFQS. thread_mlfqs가 true일 때는 MLFQS 방식으로 priority를 계산하므로
@@ -717,21 +724,29 @@ void thread_reorder_ready_queue(void)
 /* 현재 스레드의 nice을 설정합니다. */
 void thread_set_nice(int nice)
 {
-	struct thread *cur = thread_current();
-	enum intr_level old_level = intr_disable();
+	// struct thread *cur = thread_current(); nuri_MLFQS. 조건문 안쪽이랑 중복이라 주석처리 
+	// enum intr_level old_level = intr_disable();
 
-	cur->nice = nice;
+	// cur->nice = nice;
 
 	if (thread_mlfqs) /* nuri_MLFQS. MLFQS가 비활성화 된 경우엔 이 함수를 실행할 이유가 없음으로 조건문으로 true일 때만 실행 */
 	{
+		struct thread *cur = thread_current();
+		enum intr_level old_level = intr_disable(); // 원자성 확보
+
+		cur->nice = nice;
+
 		mlfqs_update_priority(cur);
+
+		intr_set_level(old_level); // 밑 코드 주석 처리하면서 조건문 안에서 원자성 확보
 	}
 
-	intr_set_level(old_level);
+	// intr_set_level(old_level); nuri_MLFQS. 위 조건문 밖 주석 처리 하면서 동일 이유 주석처리
 
 	if (thread_mlfqs) /* nuri_MLFQS. MLFQS모드에서만 우선순위 재계산하도록 조건문 추가 */
 	{
 		thread_check_preemption();
+			
 	}
 }
 
@@ -812,6 +827,15 @@ int thread_get_recent_cpu(void)
 
 	/* recent_cpu * 100을 반올림하여 반환 */
 	return FIXED_TO_REAL_ROUND(snap_recent_cpu * 100);
+}
+
+/* nuri_MLFQS. 인자로 받은 스레드의 MLFQS 우선순위를 계산하고 설정합니다. */
+void compute_mlfqs_priority(struct thread *t, void *aux UNUSED)
+{
+	if (thread_is_idle(t))
+		return;
+
+	mlfqs_update_priority(t);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.

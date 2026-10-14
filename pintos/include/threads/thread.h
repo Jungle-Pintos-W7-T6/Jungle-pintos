@@ -174,6 +174,8 @@ void thread_priority_changed(struct thread *t);
 int thread_get_priority(void);
 void thread_set_priority(int);
 void mlfqs_update_priority(struct thread *t);
+void compute_mlfqs_priority(struct thread *t, void *aux UNUSED);
+
 
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 
