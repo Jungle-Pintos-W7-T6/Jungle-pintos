@@ -81,7 +81,7 @@ static void init_thread(struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
-static void compute_recent_cpu(struct thread *t, void *aux UNUSED);
+static void compute_recent_cpu(struct thread *t, void *aux);
 
 void thread_update_load_avg(void);
 
@@ -370,7 +370,6 @@ tid_t thread_tid(void)
 void thread_exit(void)
 {
 	ASSERT(!intr_context());
-	enum intr_level old_level;
 
 #ifdef USERPROG
 	process_exit();
@@ -802,19 +801,23 @@ int thread_get_load_avg(void)
  */
 void thread_update_recent_cpu(void)
 {
+	long long coef;
 	ASSERT(intr_get_level() == INTR_OFF);
 
+	/* 공통 계수 계산 */
+	coef = FIXED_DIV(2 * load_avg, FIXED_ADD(2 * load_avg, F));
 	/* IDLE 상태 스레드를 제외한 모든 스레드들의 recent_cpu 갱신 */
-	thread_foreach(compute_recent_cpu, NULL);
+	thread_foreach(compute_recent_cpu, &coef);
 }
 
-/* 인자로 받은 스레드의 recent_cpu 값을 계산합니다.*/
-static void compute_recent_cpu(struct thread *t, void *aux UNUSED)
+/* 인자로 받은 스레드의, recent_cpu 값을 계산하고 설정합니다.*/
+static void compute_recent_cpu(struct thread *t, void *aux)
 {
 	/* IDLE 상태 스레드 제외 */
 	if (thread_is_idle(t))
 		return;
 	/* TODO: recent_cpu 수식 계산 */
+	t->recent_cpu = FIXED_ADD(FIXED_MUL(*(long long *)aux, t->recent_cpu), REAL_TO_FIXED(t->nice));
 }
 
 /* recent_cpu * 100 값을 반환합니다. */

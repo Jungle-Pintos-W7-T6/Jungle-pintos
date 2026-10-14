@@ -30,6 +30,8 @@ static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 
+static long long c_value;
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -151,6 +153,9 @@ timer_interrupt(struct intr_frame *args UNUSED)
 		}
 
 		/* 3. TODO: 4틱당 모든 스레드(IDLE 상태 제외)의 우선순위 재계산 후 READY 재정렬, 선점 검사 */
+		if (ticks % 4 == 0)
+		{
+		}
 	}
 }
 
