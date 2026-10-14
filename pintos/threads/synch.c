@@ -142,36 +142,41 @@ void sema_down(struct semaphore *sema)
 	{
 		struct thread *current = thread_current();
 
-		/* nuri. [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다."
-		   lock을 기다리던 스레드가 꺠어나도 다른 스레드가 먼저 lock을 획득하면 다시 BLOCKED 되는 경우의 수 발생.
-		   이때 lock 소유자가 바뀌었을 수도 있으므로 기부 대상 확인 */
-		if (current->wait_on_lock != NULL &&
-			sema == &current->wait_on_lock->semaphore &&
-			current->wait_on_lock->holder != NULL)
+		
+		if (!thread_mlfqs) /* nuri_MLFQS. 기존 조건에 MLFQS 모드에서 priority donation이 실행되지 않도록 조건 변경 */
 		{
-
-			/* 현재 기다리는 lock을 실제로 소유한 스레드 */
-			struct thread *holder = current->wait_on_lock->holder;
-
-			/* 이전에 기부하던 스레드와 현재 lock 소유자가 다르면
-			   이전 소유자의 donations 리스트에서 current를 제거 */
-			if (current->donation_target != NULL && current->donation_target != holder)
+			/* nuri. [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다."
+		   	lock을 기다리던 스레드가 꺠어나도 다른 스레드가 먼저 lock을 획득하면 다시 BLOCKED 되는 경우의 수 발생.
+		   	이때 lock 소유자가 바뀌었을 수도 있으므로 기부 대상 확인 */
+			if (current->wait_on_lock != NULL &&
+				sema == &current->wait_on_lock->semaphore &&
+				current->wait_on_lock->holder != NULL)
 			{
-				list_remove(&current->donation_elem);
-				current->donation_target = NULL;
-			}
 
-			/* current가 현재 lock 소유자의 donations 리스트에 없다면
-			   새 소유자에게 우선순위를 기부할 수 있도록 등록 */
-			if (current->donation_target == NULL)
-			{
-				list_push_back(&holder->donations, &current->donation_elem);
-				current->donation_target = holder;
-			}
+				/* 현재 기다리는 lock을 실제로 소유한 스레드 */
+				struct thread *holder = current->wait_on_lock->holder;
 
-			/* 새 소유자에게 current의 우선순위를 반영하고
-			   새 소유자도 다른 lock을 기다린다면 중첩 기부 처리 */
-			donate_priority(current);
+				/* 이전에 기부하던 스레드와 현재 lock 소유자가 다르면
+			   	이전 소유자의 donations 리스트에서 current를 제거 */
+				if (current->donation_target != NULL &&
+					current->donation_target != holder)
+				{
+					list_remove(&current->donation_elem);
+					current->donation_target = NULL;
+				}
+
+				/* current가 현재 lock 소유자의 donations 리스트에 없다면
+			   	새 소유자에게 우선순위를 기부할 수 있도록 등록 */
+				if (current->donation_target == NULL)
+				{
+					list_push_back(&holder->donations, &current->donation_elem);
+					current->donation_target = holder;
+				}
+
+				/* 새 소유자에게 current의 우선순위를 반영하고
+			   	새 소유자도 다른 lock을 기다린다면 중첩 기부 처리 */
+				donate_priority(current);
+			}
 		}
 		list_push_back(&sema->waiters, &thread_current()->elem);
 		thread_block();
@@ -328,7 +333,10 @@ void lock_acquire(struct lock *lock)
 	   그래서 낮은 스레드의 우선순위를 높여서 Lock을 realese 할 수 있게 만들어야 함.*/
 
 	/* 다른 스레드가 LOCK을 소유하고 있다면 */
-	if (holder != NULL)
+	// if (holder != NULL) nuri_MLFQS. 기존 구현 함수
+
+	/* nuri_MLFQS. 기존 조건에 MLFQS 모드에서 priority donation이 실행되지 않도록 조건 변경 */
+	if (holder != NULL && !thread_mlfqs)
 	{
 		current->wait_on_lock = lock;
 
@@ -355,7 +363,10 @@ void lock_acquire(struct lock *lock)
 	   lock 획득에 성공했으므로 대기자 목록에서 제거
 	   list_remove()는 실제 리스트에 연결된 노드에만 호출해야 함.
 	   처음부터 lock이 비어 있었다면 waiting_elkem을 등록하지 않은 것이므로 제거하면 안됨. */
-	if (holder != NULL)
+	// if (holder != NULL) nuri_MLFQS. 기존 구현 함수
+
+	/* nuri_MLFQS. 기존 조건에 MLFQS 모드에서 priority donation이 실행되지 않도록 조건 변경 */
+	if (holder != NULL && !thread_mlfqs)
 	{
 		list_remove(&current->waiting_elem);
 	}
@@ -367,51 +378,54 @@ void lock_acquire(struct lock *lock)
 	   lock의 소유자가 변경되었으므로 남은 대기자들의 기부 관계를 새 소유자에게 이전
 	   waiter: 아직 lock을 획득하지 못한 대기 스레드이자 우선순위를 기부할 스레드
 	   current: lock을 새로 획득한 스래드이자 기부 받는 대상 */
-	struct list_elem *e = list_begin(&lock->waiting_threads);
-
-	while (e != list_end(&lock->waiting_threads))
+	
+	if (!thread_mlfqs) /* nuri_MLFQS. 기존 조건에 MLFQS 모드에서 priority donation이 실행되지 않도록 조건 변경 */
 	{
+	   struct list_elem *e = list_begin(&lock->waiting_threads);
+
+		while (e != list_end(&lock->waiting_threads))
+		{
 
 		/* waiting_elem을 통해 실제 대기 스레드의 주소를 가져옴 */
-		struct thread *waiter = list_entry(e, struct thread, waiting_elem);
+			struct thread *waiter = list_entry(e, struct thread, waiting_elem);
 
 		/* 대기 스레드가 이미 기부 중이고, 그 대상이 현재 lock의 새 소유자와 다른지 확인 */
-		if (waiter->donation_target != NULL &&
-			waiter->donation_target != current)
-		{
-			list_remove(&waiter->donation_elem); // 이전 lock 소유자에게 기부하던 연결 제거
-			waiter->donation_target = NULL;		 // 더 이상 이전 소유자의 기부자로 등록되어 있지 않음을 NULL로 표시
+			if (waiter->donation_target != NULL &&
+				waiter->donation_target != current)
+			{
+				list_remove(&waiter->donation_elem); // 이전 lock 소유자에게 기부하던 연결 제거
+				waiter->donation_target = NULL;		 // 더 이상 이전 소유자의 기부자로 등록되어 있지 않음을 NULL로 표시
+			}
+
+			/* waiter가 아직 새 lock 소유자의 기부자로 등록되지 않은 경우 */
+			if (waiter->donation_target == NULL)
+			{
+				list_push_back(&current->donations, &waiter->donation_elem); // waiter를 새 lock 소유자의 기부자 목록에 연결
+				waiter->donation_target = current;
+			}
+			e = list_next(e);
 		}
 
-		/* waiter가 아직 새 lock 소유자의 기부자로 등록되지 않은 경우 */
-		if (waiter->donation_target == NULL)
+		/* nuri. [p1] 새 lock 소유자가 남은 대기자들에게 기부받은 우선순위 반영 lock_release()에 있는
+	   	우선순위 재계산 로직이 그대로 반복되기 때문에 별도의 함수로 만들어서 처리할 수도 있으나 우선
+	   	내부에 반복문으로 작성 */
+		current->priority = current->original_priority;
+
+		e = list_begin(&current->donations);
+
+		while (e != list_end(&current->donations))
 		{
-			list_push_back(&current->donations, &waiter->donation_elem); // waiter를 새 lock 소유자의 기부자 목록에 연결
-			waiter->donation_target = current;
+			struct thread *donor =
+				list_entry(e, struct thread, donation_elem);
+
+			if (current->priority < donor->priority)
+			{
+				current->priority = donor->priority;
+			}
+
+			e = list_next(e);
 		}
-		e = list_next(e);
 	}
-
-	/* nuri. [p1] 새 lock 소유자가 남은 대기자들에게 기부받은 우선순위 반영 lock_release()에 있는
-	   우선순위 재계산 로직이 그대로 반복되기 때문에 별도의 함수로 만들어서 처리할 수도 있으나 우선
-	   내부에 반복문으로 작성 */
-	current->priority = current->original_priority;
-
-	e = list_begin(&current->donations);
-
-	while (e != list_end(&current->donations))
-	{
-		struct thread *donor =
-			list_entry(e, struct thread, donation_elem);
-
-		if (current->priority < donor->priority)
-		{
-			current->priority = donor->priority;
-		}
-
-		e = list_next(e);
-	}
-
 	intr_set_level(old_level);
 }
 
@@ -448,42 +462,45 @@ void lock_release(struct lock *lock)
 	struct thread *current = thread_current();
 	enum intr_level old_level = intr_disable();
 
-	/* 해제하는 lock과 관련된 기부자 제거 */
-	struct list_elem *e = list_begin(&current->donations);
-
-	while (e != list_end(&current->donations))
+	if (!thread_mlfqs) /* nuri_MLFQS. 기존 조건에 MLFQS 모드에서 priority donation이 실행되지 않도록 조건 변경 */
 	{
-		struct thread *donor = list_entry(e, struct thread, donation_elem);
+		/* 해제하는 lock과 관련된 기부자 제거 */
+		struct list_elem *e = list_begin(&current->donations);
 
-		if (donor->wait_on_lock == lock)
+		while (e != list_end(&current->donations))
 		{
-			e = list_remove(e);
+			struct thread *donor = list_entry(e, struct thread, donation_elem);
 
-			/* [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다."
-			기부자 리스트에서 제거했으므로 기존 기부 대상 정보도 초기화 */
-			donor->donation_target = NULL;
+			if (donor->wait_on_lock == lock)
+			{
+				e = list_remove(e);
+
+				/* [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다."
+				기부자 리스트에서 제거했으므로 기존 기부 대상 정보도 초기화 */
+				donor->donation_target = NULL;
+			}
+			else
+			{
+				e = list_next(e);
+			}
 		}
-		else
+
+		/* 원래 가지고 있는 우선순위로 초기화*/
+		current->priority = current->original_priority;
+
+		e = list_begin(&current->donations);
+
+		while (e != list_end(&current->donations))
 		{
+			struct thread *donor = list_entry(e, struct thread, donation_elem);
+
+			if (current->priority < donor->priority)
+			{
+				current->priority = donor->priority;
+			}
+
 			e = list_next(e);
 		}
-	}
-
-	/* 원래 가지고 있는 우선순위로 초기화*/
-	current->priority = current->original_priority;
-
-	e = list_begin(&current->donations);
-
-	while (e != list_end(&current->donations))
-	{
-		struct thread *donor = list_entry(e, struct thread, donation_elem);
-
-		if (current->priority < donor->priority)
-		{
-			current->priority = donor->priority;
-		}
-
-		e = list_next(e);
 	}
 
 	lock->holder = NULL;

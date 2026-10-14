@@ -96,6 +96,8 @@ struct thread
 	int priority;			   /* 우선순위 */
 	int64_t alarm;			   /* Sleep 시 기상 시각 */
 
+	long long recent_cpu; /* 현재 CPU 사용량 */
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem; /* 리스트 요소 */
 
@@ -112,6 +114,8 @@ struct thread
 
 	struct thread *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
 	struct list_elem waiting_elem;	/*  lock의 waiting_threads 리스트에 연결할 노드 */
+
+	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
