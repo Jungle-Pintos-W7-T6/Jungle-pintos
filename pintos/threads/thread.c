@@ -47,15 +47,7 @@ static struct lock tid_lock;
 /* Thread destruction requests */
 static struct list destruction_req;
 
-void thread_check_preemption(void); /* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보. 인터럽트 안에서는 intr_yield_on_return() 사용. */
-
-void thread_priority_changed(struct thread *t); /* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
-
-bool thread_is_idle(const struct thread *t); /* YJ: 전달받은 스레드가 idle인지 판별 */
-
 size_t thread_ready_count(void); /* YJ: READY + RUNNING 수. idle 제외 */
-
-void thread_reorder_ready_queue(void); /* YJ: 일괄 변경된 우선순위로 준비 큐 재정렬. 같은 우선순위 순서 유지 */
 
 /* Statistics. */
 static long long idle_ticks;   /* # of timer ticks spent idle. */
@@ -83,23 +75,13 @@ static void schedule(void);
 static tid_t allocate_tid(void);
 static void compute_recent_cpu(struct thread *t, void *aux);
 
-void thread_update_load_avg(void);
-
-/* YJ: 더 높은 우선순위 스레드가 준비됐으면 CPU 양보.
-   인터럽트 안에서는 intr_yield_on_return() 사용. */
-void thread_check_preemption(void);
-
-/* YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수 */
-void thread_priority_changed(struct thread *t);
-
 /* nuri. synch.c에서도 include해서 사용하기 위해 static 상태 삭제 */
-bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux);
+bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 
 /* 기상 시각 비교를 위한 내부 헬퍼 함수 */
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* nuri_MLFQS. 우선순위 재계산 함수 */
-void mlfqs_update_priority(struct thread *t);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)

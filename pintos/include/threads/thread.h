@@ -168,12 +168,13 @@ void thread_yield(void);
 void thread_sleep(int64_t alarm);
 void thread_awake(int64_t ticks);
 
-void thread_check_preemption(void);				// nuri. synch.c 등 다른 파일에서도 preemption 검사를 위해 추가
-void thread_priority_changed(struct thread *t); // YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
+void thread_check_preemption(void);
+void thread_priority_changed(struct thread *t);
 
 int thread_get_priority(void);
 void thread_set_priority(int);
-/* nuri. synch.c에서도 사용하기 위해 헤더에 priority_more 추가 */
+void mlfqs_update_priority(struct thread *t);
+
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 
 int thread_get_nice(void);
