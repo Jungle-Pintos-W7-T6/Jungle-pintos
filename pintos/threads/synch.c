@@ -134,6 +134,7 @@ void sema_down(struct semaphore *sema)
 
 	ASSERT(sema != NULL);
 	ASSERT(!intr_context());
+
 	old_level = intr_disable();
 
 	/* 사용 가능한 자원이 없으면 sema->waiters에 추가하고 BLOCKED 상태로 전환 */
@@ -337,7 +338,6 @@ void lock_acquire(struct lock *lock)
 	/* nuri_MLFQS. 기존 조건에 MLFQS 모드에서 priority donation이 실행되지 않도록 조건 변경 */
 	if (holder != NULL && !thread_mlfqs)
 	{
-
 		current->wait_on_lock = lock;
 
 		/* nuri. [P1] "락을 넘겨받은 새 소유자에게 남은 대기자의 기부가 이어지지 않습니다."
