@@ -233,13 +233,14 @@ tid_t thread_create(const char *name, int priority,
 	   기존 priority scheduling에서도 이 관계는 있었으나, 우선순위를 결정하는 방식이
 	   priority 인자를 받는 방식이어서 상속을 고려할 필요가 없었던 것. Pintos에서는
 	   스레드가 다른 스레드를 생성할 수 있는데, 하나의 스레드가 모든 작업을 순차적으로
-	   처리하지 않고 여러 작업을 나누어 수행하기 위해서. 그러기 위한 thread_create() 함수*/
-	if (thread_mlfqs == true)
+	   처리하지 않고 여러 작업을 나누어 수행하기 위해서. 그러기 위한 thread_create() 함수
+	   MLFQS 모드가 활성화 되어 있고, idle 스레드가 아닐 때 실행할 조건 */
+	if (thread_mlfqs == true && function != idle)
 	{
 		t->nice = thread_current()->nice;
 		t->recent_cpu = thread_current()->recent_cpu; // nuri. Pintos MLFQS 명세에 상속하도록 규정
 
-		//mlfqs_update_priority(t);
+		//mlfqs_update_priority(t); /* new_priority 초기화 후 주석 해제할 예정. 고정소수점 연산 함수랑 계산식 완성 후 작업 예정 */
 	}
 	tid = t->tid = allocate_tid();
 
