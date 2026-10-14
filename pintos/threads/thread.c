@@ -78,6 +78,9 @@ static tid_t allocate_tid(void);
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
+/* nuri_MLFQS. 우선순위 재계산 함수 */
+void mlfqs_update_priority(struct thread *t);
+
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -127,6 +130,14 @@ void thread_init(void)
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
 	init_thread(initial_thread, "main", PRI_DEFAULT);
+
+	/* nuri_MLFQS. MLFQS 모드에서는 최초 스레드의 nice와 recent_cpu가 0이므로
+	   우선순위를 PRI_MAX로 초기화 why? 계산식 대입해보면 PRI_MAX가 됨. */
+	if (thread_mlfqs)
+	{
+		initial_thread->priority = PRI_MAX;
+	}
+
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid();
 }
@@ -205,6 +216,21 @@ tid_t thread_create(const char *name, int priority,
 
 	/* Initialize thread. */
 	init_thread(t, name, priority);
+
+	/* nuri_MLFQS. 부모 스레드의 nice 값을 새로 생성한 t의 nice에 복사
+	   Q. 부모 스레드? 자식 스레드?
+	   A. 스레드를 생성한 쪽과 생성된 쪽을 구분하려는 임의 정의
+	   기존 priority scheduling에서도 이 관계는 있었으나, 우선순위를 결정하는 방식이
+	   priority 인자를 받는 방식이어서 상속을 고려할 필요가 없었던 것. Pintos에서는
+	   스레드가 다른 스레드를 생성할 수 있는데, 하나의 스레드가 모든 작업을 순차적으로
+	   처리하지 않고 여러 작업을 나누어 수행하기 위해서. 그러기 위한 thread_create() 함수 */
+	if (thread_mlfqs == true)
+	{
+		t->nice = thread_current()->nice;
+		t->recent_cpu = thread_current()->recent_cpu;
+
+		//mlfqs_update_priority(t);
+	}
 	tid = t->tid = allocate_tid();
 
 	/* Call the kernel_thread if it scheduled.
@@ -406,8 +432,26 @@ priority-fifo는 이런 순서로 진행됨.
 수정한 함수의 내용.
 - 현재 우선순위를 변경한 직후, 기존 thread_check_preemption()으로 양보가 필요한지 검사한다.
 */
+
+/* nuri_MLFQS. thraeed_set_priority의 로직
+   1. 현재 스레드의 original_priority를 변경한다.
+   2. priority를 기본 우선순위로 초기화 한다.
+   3. donations 리스트를 순회한다.
+   4. 기부받은 우선순위 중 최댓값을 적용한다.
+   5. 선점(preemption)이 필요한지 검사한다.
+   MLFQS는 다른 로직을 사용하므로 삭제가 아닌 별도의 로직으로 적용되도록 조건 검사 필요
+   
+   MLFQS의 우선순위 계산 공식:
+   priority = PRI_MAX - (recent_cpu/4) - (2*nice)*/
 void thread_set_priority(int new_priority)
 {
+	/* nuri_MLFQS. thread_mlfqs가 true일 때는 MLFQS 방식으로 priority를 계산하므로
+	   set_priority로 값이 바뀌는 것을 방지해야 함. */
+	if (thread_mlfqs == true)
+	{
+		return;
+	}
+
 	struct thread *current = thread_current(); // 현재 running thread 주소를 받음
 	enum intr_level old_level = intr_disable();
 
@@ -534,16 +578,32 @@ void thread_priority_changed(struct thread *t)
 }
 
 /* Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice UNUSED)
+void thread_set_nice(int nice) /* nuri_MLFQS. nice 변수 사용하므로 UNUSED 제거 */
 {
 	/* TODO: Your implementation goes here */
+	struct thread *cur = thread_current();
+	enum intr_level old_level = intr_disable(); // 원자성 확보
+
+	cur->nice = nice;
+
+	if (thread_mlfqs) /* nuri_MLFQS. MLFQS가 비활성화 된 경우엔 이 함수를 실행할 이유가 없음으로 조건문으로 true일 때만 실행 */
+	{
+		mlfqs_update_priority(cur);
+	}
+
+	intr_set_level(old_level); // 원자성 확보
+
+	if (thread_mlfqs)  /* nuri_MLFQS. MLFQS모드에서만 우선순위 재계산하도록 조건문 추가 */
+	{
+		thread_check_preemption();
+	}
 }
 
 /* Returns the current thread's nice value. */
 int thread_get_nice(void)
 {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->nice; // nuri. get_priority와 동일 로직.
 }
 
 /* Returns 100 times the system load average. */
@@ -861,4 +921,36 @@ compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UN
 	struct thread *b_entry = list_entry(b, struct thread, elem);
 
 	return a_entry->alarm < b_entry->alarm;
+}
+
+
+/* nuri_MLFQS. 우선순위 재계산함수
+   로직:
+   1. t가 idle 스레드인지 확인합니다.
+   2. idle 스레드라면 계산하지 않고 반환합니다.
+   3. 일반 스레드라면 MLFQS 공식으로 우선순위를 계산합니다.
+   4. 결과를 PRI_MIN~PRI_MAX 범위로 제한합니다.
+   5. t->priority에 저장합니다. */
+void mlfqs_update_priority(struct thread *t)
+{
+	if (t == idle_thread)
+	{
+		return;
+	}
+
+	int new_priority; /* nuri_MLFQS. MLFQS 공식으로 계산한 새로운 priority 값 계산 함수 필요 */
+
+	// new_priority = ; // <- 여기에 계산한 값 저장.
+
+	/* 계산한 값 범위 제한 */
+	if (new_priority < PRI_MIN)
+	{
+		new_priority = PRI_MIN;
+	}
+	if (new_priority > PRI_MAX)
+	{
+		new_priority = PRI_MAX;
+	}
+
+	t->priority = new_priority;
 }
