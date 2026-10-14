@@ -153,8 +153,7 @@ timer_interrupt(struct intr_frame *args UNUSED)
 		/* 3. TODO: 4틱당 모든 스레드(IDLE 상태 제외)의 우선순위 재계산 후 READY 재정렬, 선점 검사 */
 		if (ticks % 4 == 0)
 		{
-			/* TODO: mlfqs_update_priority 내부에서 thread_foreach 문을 쓰는게 어떤가 싶음 */
-			/* TODO: thread_check_preemption() */
+			thread_mlfqs_refresh_prioritie();	// YJ
 		}
 	}
 }

@@ -81,6 +81,12 @@ bool priority_more(const struct list_elem *elem_prev, const struct list_elem *el
 /* 기상 시각 비교를 위한 내부 헬퍼 함수 */
 static bool compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
+/* YJ */
+static void mlfqs_priority_action(struct thread *t, void *aux UNUSED);
+
+/* YJ */
+void thread_mlfqs_refresh_prioritie(void);
+
 /* nuri_MLFQS. 우선순위 재계산 함수 */
 
 /* Returns true if T appears to point to a valid thread. */
@@ -441,7 +447,7 @@ void mlfqs_update_priority(struct thread *t)
 
 	int new_priority; /* nuri_MLFQS. MLFQS 공식으로 계산한 새로운 priority 값 계산 함수 필요 */
 
-	// new_priority = ; // <- 여기에 계산한 값 저장.
+	new_priority = FIXED_TO_REAL_DOWN(REAL_TO_FIXED(PRI_MAX) - ((t->recent_cpu) / 4) - (REAL_TO_FIXED(t->nice) * 2)); // <- 여기에 계산한 값 저장.	
 
 	/* 계산한 값 범위 제한 */
 	if (new_priority < PRI_MIN)
@@ -730,12 +736,31 @@ void thread_reorder_ready_queue(void)
   • 계산식, 준비 큐 정렬, 선점 검사는 넣지 않는다.
   • thread.c 내부용이므로 static으로 선언하고, 위쪽에 전방 선언을 추가한다. 헤더에는 추가하지 않는다.
 */
-void mlfqs_priority_action(struct thread *t, void *aux UNUSED){
-	
+static void mlfqs_priority_action(struct thread *t, void *aux UNUSED)
+{
+	mlfqs_update_priority(t);
 }
 
 /* YJ TODO: 일괄 
-*/
+   1. 이전 인터럽트 상태를 저장하고 끈다.
+   2. 전체 스레드에 우선순위 계산 작업을 적용한다.  
+   3. 준비 큐를 한 번 정렬한다. 
+   4. 선점이 필요한지 한 번 검사한다.
+   5. 이전 인터럽트 상태를 복원한다. */
+void thread_mlfqs_refresh_prioritie(void)
+{
+	enum intr_level old_level;
+
+	old_level = intr_disable();
+
+	thread_foreach(mlfqs_priority_action, NULL);
+
+	thread_reorder_ready_queue();
+
+	thread_check_preemption();
+
+	intr_set_level(old_level);
+}
 
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice) /* nuri_MLFQS. nice 변수 사용하므로 UNUSED 제거 */

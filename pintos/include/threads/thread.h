@@ -138,6 +138,9 @@ struct thread
 typedef void thread_action_func(struct thread *t, void *aux);
 void thread_foreach(thread_action_func *func, void *aux);
 
+/* YJ */
+void thread_mlfqs_refresh_prioritie(void);
+
 bool thread_is_idle(const struct thread *t); // YJ
 size_t thread_ready_count(void);			 // YJ
 void thread_reorder_ready_queue(void);		 // YJ
