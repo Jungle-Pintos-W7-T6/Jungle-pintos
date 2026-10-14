@@ -96,6 +96,8 @@ struct thread
 	int priority;			   /* 우선순위 */
 	int64_t alarm;			   /* Sleep 시 기상 시각 */
 
+	long long recent_cpu; /* 현재 CPU 사용량 */
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem; /* 리스트 요소 */
 
@@ -113,10 +115,9 @@ struct thread
 	struct thread *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
 	struct list_elem waiting_elem;	/*  lock의 waiting_threads 리스트에 연결할 노드 */
 
-	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. recent_cpu는 협의 필요 */
-	int recent_cpu; /*nuri_MLFQS. int로 할지 아닐지 협의 반드시 필요*/
+	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. */
 
-	struct list_elem all_elem;			/* YJ: 각 스레드를 명단에 연결할 요소. 스레드를 복사하거나 새로 생성하는 작업은 없음. 기존 스레드에 연결 요소 하나를 추가하는 것. */
+	struct list_elem all_elem; /* YJ: 각 스레드를 명단에 연결할 요소. 스레드를 복사하거나 새로 생성하는 작업은 없음. 기존 스레드에 연결 요소 하나를 추가하는 것. */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -137,9 +138,9 @@ struct thread
 typedef void thread_action_func(struct thread *t, void *aux);
 void thread_foreach(thread_action_func *func, void *aux);
 
-bool thread_is_idle(const struct thread *t);			// YJ
-size_t thread_ready_count(void);						// YJ
-void thread_reorder_ready_queue(void);					// YJ
+bool thread_is_idle(const struct thread *t); // YJ
+size_t thread_ready_count(void);			 // YJ
+void thread_reorder_ready_queue(void);		 // YJ
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -167,16 +168,19 @@ void thread_yield(void);
 void thread_sleep(int64_t alarm);
 void thread_awake(int64_t ticks);
 
-void thread_check_preemption(void);				// nuri. synch.c 등 다른 파일에서도 preemption 검사를 위해 추가
-void thread_priority_changed(struct thread *t); // YJ: 우선순위 값이 바뀐 READY 스레드를 준비 큐에서 올바른 위치로 옮기는 함수
+void thread_check_preemption(void);
+void thread_priority_changed(struct thread *t);
 
 int thread_get_priority(void);
 void thread_set_priority(int);
-/* nuri. synch.c에서도 사용하기 위해 헤더에 priority_more 추가 */
+void mlfqs_update_priority(struct thread *t);
+
 bool priority_more(const struct list_elem *elem_prev, const struct list_elem *elem_next, void *aux UNUSED);
 
 int thread_get_nice(void);
-void thread_set_nice(int);
+void thread_set_nice(int UNUSED);
+void thread_update_load_avg(void);
+void thread_update_recent_cpu(void);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 

@@ -7,6 +7,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/fixed-point.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -134,6 +135,28 @@ timer_interrupt(struct intr_frame *args UNUSED)
 	ticks++;
 	thread_tick();
 	thread_awake(ticks);
+
+	/* MLFQS 스케줄러 모드 */
+	if (thread_mlfqs)
+	{
+		/* 1. 틱당 현재 스레드(IDLE 상태 제외)의 recent_cpu 갱신 */
+		if (!thread_is_idle(thread_current()))
+			thread_current()->recent_cpu += F;
+
+		/* 2. 초당 load_avg 갱신 -> 모든 스레드의 recent_cpu 재계산 */
+		if (ticks % TIMER_FREQ == 0)
+		{
+			thread_update_load_avg();
+			thread_update_recent_cpu();
+		}
+
+		/* 3. TODO: 4틱당 모든 스레드(IDLE 상태 제외)의 우선순위 재계산 후 READY 재정렬, 선점 검사 */
+		if (ticks % 4 == 0)
+		{
+			/* TODO: mlfqs_update_priority 내부에서 thread_foreach 문을 쓰는게 어떤가 싶음 */
+			/* TODO: thread_check_preemption() */
+		}
+	}
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
