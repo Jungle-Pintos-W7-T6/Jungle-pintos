@@ -113,8 +113,8 @@ struct thread
 	struct thread *donation_target; /* 현재 자신이 기부자로 등록된 대상 스레드 */
 	struct list_elem waiting_elem;	/*  lock의 waiting_threads 리스트에 연결할 노드 */
 
-	int nice; /* nuri. MLFQS에서 우선순위 계산을 위해 필요한 필드. recent_cpu는 협의 필요 */
-	int recent_cpu; /*nuri_MLFQS. int로 할지 아닐지 협의 반드시 필요*/
+	int nice; /* nuri_MLFQS. 스레드의 CPU 사용 우선순위를 조정하는 nice 값 */
+	long long recent_cpu; /*nuri_MLFQS. 스레드의 최근 CPU 사용량을 저장하는 17.14 고정 소수점 값*/
 
 	struct list_elem all_elem;			/* YJ: 각 스레드를 명단에 연결할 요소. 스레드를 복사하거나 새로 생성하는 작업은 없음. 기존 스레드에 연결 요소 하나를 추가하는 것. */
 

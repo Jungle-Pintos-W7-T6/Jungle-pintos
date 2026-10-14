@@ -1024,7 +1024,13 @@ compare_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UN
    5. t->priority에 저장합니다. */
 void mlfqs_update_priority(struct thread *t)
 {
-	if (t == idle_thread)
+	// if (t == idle_thread)
+	// {
+	// 	return;
+	// }
+
+	/* nuri_MLFQS. 인라인으로 구현한 것 A파트에서 작성해준 함수로 변경 */
+	if (thread_is_idle(t))
 	{
 		return;
 	}
